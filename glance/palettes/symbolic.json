@@ -1,0 +1,26 @@
+{
+    "__attrs__": {
+        "title": "Symbolic"
+    },
+    "__items__": {
+        "numbers_black": {
+            "__attrs__": {
+                "title": "Numbers Black",
+                "font": {"family": "DejaVu Sans"}
+            },
+            "__items__": {
+                "10": ["\u278a","\u278b","\u278c","\u278d","\u278e","\u278f","\u2790","\u2791","\u2792","\u2793"]
+            }
+        },
+        "numbers_white": {
+            "__attrs__": {
+                "title": "Numbers White",
+                "font": {"family": "DejaVu Sans"}
+            },
+            "__items__": {
+                "10": ["\u2780","\u2781","\u2782","\u2783","\u2784","\u2785","\u2786","\u2787","\u2788","\u2789"]
+            }
+        }
+    }
+}
+

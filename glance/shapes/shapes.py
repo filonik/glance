@@ -1,0 +1,34 @@
+
+
+def chrs(cs):
+    return [chr(c) for c in cs]
+
+
+def upper_letter(i):
+    return chr(ord('A') + i)
+
+
+def lower_letter(i):
+    return chr(ord('a') + i)
+
+
+BLOCK_ELEMENTS = chrs(range(0x2580, 0x259F))
+GEOMETRIC_SHAPES = chrs(range(0x25A0, 0x25FF))
+MISCELLANEOUS_SYMBOLS = chrs(range(0x2600, 0x26FF))
+DINGBATS = chrs(range(0x2700, 0x27BF))
+
+BLACK_SUITS = chrs([0x2660,0x2663,0x2665,0x2666])
+WHITE_SUITS = chrs([0x2664,0x2667,0x2661,0x2662])
+SUITS = BLACK_SUITS + WHITE_SUITS
+
+#Triangle, Raute, Circle, Square, Star, X, Cross
+
+BLACK_SQUARE = 0x25A0
+WHITE_SQUARE = 0x25A1
+BLACK_CIRCLE = 0x25CF
+WHITE_CIRCLE = 0x25CB
+BLACK_MEDIUM_SQUARE = 0x25FC
+WHITE_MEDIUM_SQUARE = 0x25FB
+
+BLACK_GEOMETRIC_SELECTION = chrs([BLACK_MEDIUM_SQUARE, 0x25B2, 0x25C6, BLACK_CIRCLE, 0x2605, 0x2716, 0x271C])
+WHITE_GEOMETRIC_SELECTION = chrs([WHITE_MEDIUM_SQUARE, 0x25B3, 0x25C7, WHITE_CIRCLE, 0x2606, 0x2715, 0x271B])

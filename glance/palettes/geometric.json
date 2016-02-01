@@ -1,0 +1,53 @@
+{
+    "__attrs__": {
+        "title": "Geometric"
+    },
+    "__items__": {
+        "geometric_black": {
+            "__attrs__": {
+                "title": "Simple Black",
+                "font": {"family": "DejaVu Sans"}
+            },
+            "__items__": {
+                "8": ["\u25FC","\u25B2","\u25C6","\u25CF","\u25b0","\u2605","\u2716","\u271C"]
+            }
+        },
+        "geometric_white": {
+            "__attrs__": {
+                "title": "Simple White",
+                "font": {"family": "DejaVu Sans"}
+            },
+            "__items__": {
+                "8": ["\u25FB","\u25B3","\u25C7","\u25CB","\u25b1","\u2606","\u2715","\u271B"]
+            }
+        },
+        "crosses": {
+            "__attrs__": {
+                "title": "Crosses",
+                "font": {"family": "DejaVu Sans"}
+            },
+            "__items__": {
+                "8": ["\u271a","\u2724","\u2726","\u2731","\u2756","\u2736","\u2737","\u2738"]
+            }
+        },
+        "suits_black": {
+            "__attrs__": {
+                "title": "Suits Black",
+                "font": {"family": "DejaVu Sans"}
+            },
+            "__items__": {
+                "4": ["\u2660","\u2663","\u2665","\u2666"]
+            }
+        },
+        "suits_white": {
+            "__attrs__": {
+                "title": "Suits White",
+                "font": {"family": "DejaVu Sans"}
+            },
+            "__items__": {
+                "4": ["\u2664","\u2667","\u2661","\u2662"]
+            }
+        }
+    }
+}
+

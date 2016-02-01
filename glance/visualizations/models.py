@@ -172,7 +172,7 @@ class Mark(objects.Object):
         shape = Property(title="Shape", type="Shape")
         shape["index"] = Property(title="Index", type="Integer", default=0, visible=False) 
         shape["palette"] = Property(title="Palette", type="String", default="geometric.geometric_black", visible=False)   
-        texture = Property(title="Texture", type="Texture", default=None, visible=False)
+        texture = Property(title="Texture", type="Texture", default=None)
         size = Property(title="Size", type="Decimal", coerce=md.ordinal, default=1.0)
         label = Property(title="Label", type="String", default="", visible=False)
         motion = Property(title="Motion", type="Decimal", coerce=md.ordinal, default=0.0)

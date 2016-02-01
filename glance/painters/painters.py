@@ -228,8 +228,8 @@ def chain(*painters):
     return paint
 
 
-def atlas(shape, painters, **kwargs):
-    def flip(i, index, shape):
+def atlas(shape, painters, flip=1, **kwargs):
+    def _flip(i, index, shape):
         index = np.array(index, dtype=np.int32)
         if i < len(index):
             index[i] = shape[i] - index[i] - 1
@@ -241,7 +241,7 @@ def atlas(shape, painters, **kwargs):
             if painter is None:
                 continue
             
-            index = flip(1, index, tuple(shape))
+            index = index if flip is None else _flip(flip, index, tuple(shape))
             
             item_offset = item_size * index
             

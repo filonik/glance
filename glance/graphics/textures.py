@@ -134,15 +134,21 @@ class Texture(Resource):
 
     @classmethod
     def from_data(cls, *args, **kwargs):
-        return cls(TextureData(*args, **kwargs))
+        filter = kwargs.get("filter", gl.DEFAULT_TEXTURE_FILTER)
+        wrap = kwargs.get("wrap", gl.DEFAULT_TEXTURE_WRAP)
+        return cls(TextureData(*args, **kwargs), filter=filter, wrap=wrap)
 
     @classmethod
     def from_file(cls, path, *args, **kwargs):
-        return cls(TextureFile([cls.relative_path(path)], *args, **kwargs))
+        filter = kwargs.get("filter", gl.DEFAULT_TEXTURE_FILTER)
+        wrap = kwargs.get("wrap", gl.DEFAULT_TEXTURE_WRAP)
+        return cls(TextureFile([cls.relative_path(path)], *args, **kwargs), filter=filter, wrap=wrap)
 
     @classmethod
     def from_files(cls, paths, *args, **kwargs):
-        return cls(TextureFile([cls.relative_path(path) for path in paths], *args, **kwargs))
+        filter = kwargs.get("filter", gl.DEFAULT_TEXTURE_FILTER)
+        wrap = kwargs.get("wrap", gl.DEFAULT_TEXTURE_WRAP)
+        return cls(TextureFile([cls.relative_path(path) for path in paths], *args, **kwargs), filter=filter, wrap=wrap)
 
     @property
     def target(self):

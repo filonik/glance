@@ -92,8 +92,8 @@ def _path(f, **kwargs):
         if stroke_dasharray is not None:
             cr.set_dash(stroke_dasharray)
         f(cr, size)
-        _fill_path(cr, **kwargs)
         _stroke_path(cr, **kwargs)
+        _fill_path(cr, **kwargs)
         cr.new_path()
     return paint
 
@@ -184,6 +184,42 @@ def text(content, **kwargs):
 
         cr.text_path(content)
     return _normal_path(paint, **kwargs)
+
+
+def grid(n, **kwargs):
+    foreground_color = kwargs.get('stroke')
+    background_color = kwargs.get('fill')
+    
+    def paint(cr, size):
+        cr.set_operator(cairo.OPERATOR_OVER)
+        
+        cr.set_source_rgba(
+            accessors.getitem(background_color, 0, 0.0),
+            accessors.getitem(background_color, 1, 0.0),
+            accessors.getitem(background_color, 2, 0.0),
+            accessors.getitem(background_color, 3, 1.0)
+        )
+        
+        cr.paint()
+        
+        if n == 0: return
+        
+        cr.set_source_rgba(
+            accessors.getitem(foreground_color, 0, 0.0),
+            accessors.getitem(foreground_color, 1, 0.0),
+            accessors.getitem(foreground_color, 2, 0.0),
+            accessors.getitem(foreground_color, 3, 1.0)
+        )
+        
+        cr.set_line_width(1.0/(n+1))
+        
+        for i in np.linspace(-1.0, +1.0, (n+1)):
+            cr.move_to(i, -1.0)
+            cr.line_to(i, +1.0)
+            cr.move_to(-1.0, i)
+            cr.line_to(+1.0, i)
+    
+    return _normal(_path(paint, **kwargs), **kwargs)
 
 
 def grain(n, **kwargs):

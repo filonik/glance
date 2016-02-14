@@ -1,4 +1,5 @@
 import collections
+import copy
 import enum
 import logging
 
@@ -7,7 +8,7 @@ import numpy as np
 from glue import gl
 from glue.gl import GL
 
-from encore import accessors, generators, iterables, mappings, objects, utilities
+from encore import accessors, coercions, generators, iterables, mappings, objects, predicates, utilities
 
 import medley as md
 from medley import expressions
@@ -22,6 +23,32 @@ from .. import painters
 
 logger = logging.getLogger(__name__.split(".").pop())
 
+_identifier_size = 32
+
+_identifier_type = utilities.Bits(4, _identifier_size - 4)
+_identifier_data = utilities.Bits(_identifier_size - 4, 0)
+
+_identifier_mark_layer = utilities.Bits(4, _identifier_data.size - 4)
+_identifier_mark_index = utilities.Bits(_identifier_data.size - 4, 0)
+
+ORIGIN_TYPE = 1 << 0
+AXIS_TYPE = 1 << 1
+MARK_TYPE = 1 << 2
+GUIDE_TYPE = 1 << 3
+
+
+def identifier(type, data):
+    return _identifier_type.encode(type) | _identifier_data.encode(data)
+
+def origin_identifier():
+    return identifier(ORIGIN_TYPE, 0)
+
+def axis_identifier(index):
+    return identifier(AXIS_TYPE, index)
+
+def mark_identifier(layer, index):
+    return identifier(MARK_TYPE, _identifier_mark_layer.encode(layer) | _identifier_mark_index.encode(index))
+
 
 GLANCE_LIGHT_COUNT = 3
 
@@ -29,7 +56,6 @@ DEFAULT_VERTEX_FORMAT = vertices.DEFAULT_FORMAT | vertices.Component.Transform
 DEFAULT_VERTEX_ND_FORMAT = vertices.FORMAT_SIZE_OFFSET | vertices.Component.Identifier
 
 DEFAULT_PROGRAM_DEFINES = mappings.DefineMap({
-    "GLANCE_ALPHA_TEST": 1,
     "GLANCE_COLOR": 2,
     "GLANCE_LIGHT_COUNT": GLANCE_LIGHT_COUNT,
     "GLANCE_MATERIAL_COUNT": 2,
@@ -37,16 +63,17 @@ DEFAULT_PROGRAM_DEFINES = mappings.DefineMap({
     "GLANCE_MATERIAL_FORMAT": materials.DEFAULT_FORMAT,
     "GLANCE_MATERIAL_COLOR_AMBIENT": 1,
     "GLANCE_MATERIAL_COLOR_DIFFUSE": 1,
-    "GLANCE_TESS_LEVEL_INNER": 8,
-    "GLANCE_TESS_LEVEL_OUTER": 8,
+    "GLANCE_TESS_LEVEL_INNER": 32,
+    "GLANCE_TESS_LEVEL_OUTER": 32,
     "GLANCE_VERTEX_FORMAT": DEFAULT_VERTEX_FORMAT,
     "GLANCE_VERTEX_ND_FORMAT": DEFAULT_VERTEX_ND_FORMAT,
     "M_N": mdefaults.DEFAULT_N,
 })
 
+
 def unpack_args(func):
     def _unpack_args(key):
-        return func(*key)
+        return func(*coercions.coerce_tuple(key))
     return _unpack_args
 
 
@@ -58,9 +85,14 @@ def simplex1_nd_program(material_format=materials.DEFAULT_FORMAT, vertex_format=
     return gdefaults.thick_simplex_nd_program(material_format, vertex_format, 1, space=renderers.Space.View)
 
 
-def shaded_surface_program(material_format, shade):
-    return shaders.Program.from_files(["default_nd.vs", "surface_nd.gs", "shade_phong.fs"], defines={
+def shaded_surface_program(material_format, coordinate_count, shade):
+    return shaders.Program.from_files([
+        "default_warp_nd.vs",
+        "surface_nd.gs",
+        "shade_phong.fs",
+    ], defines={
         "GLANCE_COLOR": 1,
+        "GLANCE_COORDINATE_COUNT": coordinate_count,
         "GLANCE_LIGHT_COUNT": GLANCE_LIGHT_COUNT,
         "GLANCE_MATERIAL_FORMAT": material_format,
         "GLANCE_MATERIAL_COLOR_AMBIENT": 1,
@@ -73,23 +105,37 @@ def shaded_surface_program(material_format, shade):
     })
 
 
-def axis_program(material_format):
-    return shaders.Program.from_files(["default_nd.vs", "thick_simplex1_nd.gs", "default.fs"], defines={
+def axis_program(material_format, coordinate_count):
+    return shaders.Program.from_files([
+        "default_nd.vs",
+        "tessellate_simplex1_nd.tcs",
+        "tessellate_simplex1_nd.tes",
+        "thick_simplex1_warp_nd.gs",
+        "default.fs"
+    ], defines={
         "GLANCE_COLOR": 1,
+        "GLANCE_COORDINATE_COUNT": coordinate_count,
         "GLANCE_LIGHT_COUNT": GLANCE_LIGHT_COUNT,
         "GLANCE_MATERIAL_FORMAT": material_format,
         "GLANCE_MATERIAL_COLOR_AMBIENT": 1,
         "GLANCE_MATERIAL_COLOR_DIFFUSE": 1,
         "GLANCE_MATERIAL_SIDES": 1,
+        "GLANCE_TESS_LEVEL_INNER": 32,
+        "GLANCE_TESS_LEVEL_OUTER": 32,
         "GLANCE_VERTEX_FORMAT": DEFAULT_VERTEX_FORMAT,
         "GLANCE_VERTEX_ND_FORMAT": DEFAULT_VERTEX_ND_FORMAT,
         "M_N": mdefaults.DEFAULT_N,
     })
 
 
-def tick_program(material_format):
-    return shaders.Program.from_files(["default_nd.vs", "axes_nd.gs", "default.fs"], defines={
+def tick_program(material_format, coordinate_count):
+    return shaders.Program.from_files([
+        "default_warp_nd.vs",
+        "axes_nd.gs",
+        "default.fs"
+    ], defines={
         "GLANCE_COLOR": 1,
+        "GLANCE_COORDINATE_COUNT": coordinate_count,
         "GLANCE_LIGHT_COUNT": GLANCE_LIGHT_COUNT,
         "GLANCE_MATERIAL_COUNT": 2,
         "GLANCE_MATERIAL_SIDES": 1,
@@ -103,12 +149,14 @@ def tick_program(material_format):
     })
 
 
-def mark_program(material_format, shade, i):
+def label_program(material_format, coordinate_count, shade=0):
     return shaders.Program.from_files([
         "default_nd.vs",
-        "mark{}_nd.gs".format(i),
-        "shade_phong.fs",
+        "cube2_nd.gs",
+        "plain_texture.fs",
     ], defines=DEFAULT_PROGRAM_DEFINES + {
+        "GLANCE_ALPHA_TEST": 1,
+        "GLANCE_COORDINATE_COUNT": coordinate_count,
         "GLANCE_MARK_DIMENSION": 2,
         "GLANCE_MATERIAL_TEXTURE_AMBIENT": 1,
         "GLANCE_MATERIAL_TEXTURE_DIFFUSE": 1,
@@ -117,7 +165,23 @@ def mark_program(material_format, shade, i):
     })
 
 
-def mark_instance_program(material_format, shade, i):
+def mark_program(material_format, coordinate_count, shade, i):
+    return shaders.Program.from_files([
+        "default_nd.vs",
+        "mark{}_nd.gs".format(i),
+        "shade_phong.fs",
+    ], defines=DEFAULT_PROGRAM_DEFINES + {
+        "GLANCE_ALPHA_TEST": 1,
+        "GLANCE_COORDINATE_COUNT": coordinate_count,
+        "GLANCE_MARK_DIMENSION": 2,
+        "GLANCE_MATERIAL_TEXTURE_AMBIENT": 1,
+        "GLANCE_MATERIAL_TEXTURE_DIFFUSE": 1,
+        "GLANCE_SHADE": int(shade),
+        "GLANCE_SPACE": int(renderers.Space.View),
+    })
+
+
+def mark_instance_program(material_format, coordinate_count, shade, i):
     return shaders.Program.from_files([
         "default_instanced_nd.vs",
         "tessellate_simplex2_instanced_nd.tcs",
@@ -126,14 +190,19 @@ def mark_instance_program(material_format, shade, i):
         #"extrude_instanced_nd.gs",
         "shade_phong.fs",
     ], defines=DEFAULT_PROGRAM_DEFINES + {
+        "GLANCE_COORDINATE_COUNT": coordinate_count,
         "GLANCE_MARK_DIMENSION": 2,
         "GLANCE_MATERIAL_COUNT": 2,
         "GLANCE_MATERIAL_SIDES": 2,
+        "GLANCE_MATERIAL_TEXTURE_AMBIENT": 1,
+        "GLANCE_MATERIAL_TEXTURE_DIFFUSE": 1,
+        "GLANCE_MERCATOR": 1,
         "GLANCE_SHADE": int(shade),
         "GLANCE_SPACE": int(renderers.Space.View),
     })
 
-def mark_interval_program(material_format, shade, i):
+
+def mark_interval_program(material_format, coordinate_count, shade, i):
     return shaders.Program.from_files([
         "default_nd.vs",
         "tessellate_simplex0_to_cube{}_nd.tcs".format(i),
@@ -141,25 +210,16 @@ def mark_interval_program(material_format, shade, i):
         "extrude_simplex{}_nd.gs".format(i),
         "shade_phong.fs"
     ], defines=DEFAULT_PROGRAM_DEFINES + {
+        "GLANCE_COORDINATE_COUNT": coordinate_count,
         "GLANCE_MARK_DIMENSION": 2,
         "GLANCE_MATERIAL_COUNT": 2,
         "GLANCE_MATERIAL_SIDES": 2,
+        "GLANCE_MATERIAL_TEXTURE_AMBIENT": 1,
+        "GLANCE_MATERIAL_TEXTURE_DIFFUSE": 1,
         "GLANCE_SHADE": int(shade),
         "GLANCE_SPACE": int(renderers.Space.View),
     })
 
-
-DEFAULT_MARK_PROGRAMS = mappings.CustomMap(factory=unpack_args(mark_program))
-DEFAULT_MARK_INSTANCE_PROGRAMS = mappings.CustomMap(factory=unpack_args(mark_instance_program))
-DEFAULT_MARK_INTERVAL_PROGRAMS = mappings.CustomMap(factory=unpack_args(mark_interval_program))
-
-
-DEFAULT_SHADED_SURFACE_PROGRAMS = mappings.CustomMap(factory=unpack_args(shaded_surface_program))
-
-DEFAULT_SURFACE_PROGRAMS = {
-    False: DEFAULT_SHADED_SURFACE_PROGRAMS[materials.DEFAULT_FORMAT, 0],
-    True: DEFAULT_SHADED_SURFACE_PROGRAMS[materials.DEFAULT_FORMAT, renderers.Shade.Phong],
-}
 
 DEFAULT_SIMPLEX0_PROGRAMS = mappings.CustomMap(factory=unpack_args(simplex0_nd_program))
 DEFAULT_SIMPLEX1_PROGRAMS = mappings.CustomMap(factory=unpack_args(simplex1_nd_program))
@@ -167,42 +227,49 @@ DEFAULT_SIMPLEX1_PROGRAMS = mappings.CustomMap(factory=unpack_args(simplex1_nd_p
 DEFAULT_SIMPLEX0_PROGRAM = DEFAULT_SIMPLEX0_PROGRAMS[()]
 DEFAULT_SIMPLEX1_PROGRAM = DEFAULT_SIMPLEX1_PROGRAMS[()]
 
-DEFAULT_AXIS_PROGRAM = axis_program(materials.DEFAULT_FORMAT)
-DEFAULT_TICK_PROGRAM = tick_program(materials.DEFAULT_FORMAT)
+DEFAULT_ORIGIN_PROGRAMS = mappings.CustomMap(factory=unpack_args(shaded_surface_program))
+DEFAULT_AXIS_PROGRAMS = mappings.CustomMap(factory=unpack_args(axis_program))
+DEFAULT_TICK_PROGRAMS = mappings.CustomMap(factory=unpack_args(tick_program))
+
+DEFAULT_MARK_PROGRAMS = mappings.CustomMap(factory=unpack_args(mark_program))
+DEFAULT_MARK_INSTANCE_PROGRAMS = mappings.CustomMap(factory=unpack_args(mark_instance_program))
+DEFAULT_MARK_INTERVAL_PROGRAMS = mappings.CustomMap(factory=unpack_args(mark_interval_program))
+
+DEFAULT_LABEL_PROGRAMS = mappings.CustomMap(factory=unpack_args(label_program))
 
 
-DEFAULT_MATERIAL_NORMAL_RGB = materials.PhongMaterial(colors={
+DEFAULT_MATERIAL_COLORS_NORMAL_RGB = {
     "ambient": colors.svg.white.rgb,
     "diffuse": colors.svg.white.rgb,
     "specular": colors.svg.black.rgb,
     "emissive": colors.svg.black.rgb,
-}, opacity=1.0, shininess=32.0)
+}
 
-DEFAULT_MATERIAL_HOVER_RGB = materials.PhongMaterial(colors={
+DEFAULT_MATERIAL_COLORS_HOVER_RGB = {
     "ambient": colors.Color.from_hex("#66cc66").rgb,
     "diffuse": colors.Color.from_hex("#66cc66").rgb,
     "specular": colors.svg.black.rgb,
     "emissive": colors.svg.black.rgb,
-}, opacity=1.0, shininess=32.0)
+}
 
-DEFAULT_MATERIAL_NORMAL_HSV = materials.PhongMaterial(colors={
+DEFAULT_MATERIAL_COLORS_NORMAL_HSV = {
     "ambient": colors.svg.white.hsv,
     "diffuse": colors.svg.white.hsv,
     "specular": colors.svg.black.hsv,
     "emissive": colors.svg.black.hsv,
-}, opacity=1.0, shininess=32.0)
+}
 
-DEFAULT_MATERIAL_HOVER_HSV = materials.PhongMaterial(colors={
+DEFAULT_MATERIAL_COLORS_HOVER_HSV = {
     "ambient": colors.Color.from_hex("#66cc66").hsv,
     "diffuse": colors.Color.from_hex("#66cc66").hsv,
     "specular": colors.svg.black.hsv,
     "emissive": colors.svg.black.hsv,
-}, opacity=1.0, shininess=32.0)
+}
 
 
 def axes_nd_program(key):
     vertex_format, wrap, transform_count = key
-    return shaders.Program.from_files(["axes_nd.cs"], defines={
+    return shaders.Program.from_files(["axes_clip_nd.cs"], defines={
         "GLANCE_COLOR": 2,
         "GLANCE_TRANSFORM_COUNT": transform_count,
         "GLANCE_VERTEX_ND_FORMAT": DEFAULT_VERTEX_ND_FORMAT,
@@ -214,7 +281,7 @@ def axes_nd_program(key):
 
 def axes_interpolate_nd_program(key):
     vertex_format, wrap, transform_count = key
-    return shaders.Program.from_files(["axes_interpolate_nd.cs"], defines={
+    return shaders.Program.from_files(["axes_interpolate_clip_nd.cs"], defines={
         "GLANCE_COLOR": 2,
         "GLANCE_TRANSFORM_COUNT": transform_count,
         "GLANCE_VERTEX_ND_FORMAT": DEFAULT_VERTEX_ND_FORMAT,
@@ -236,26 +303,38 @@ def replace(predicate, value):
 
 
 class BackgroundView(scenes.View):
-    def __init__(self, path, size=None, parent=None):
-        super().__init__(size=size, parent=parent)
+    @property
+    def texture(self):
+        return self._texture
         
-        self._path = path
-
+    @texture.setter
+    def texture(self, value):
+        self._texture = value
+    
+    def __init__(self, texture=None, parent=None):
+        super().__init__(parent=parent)
+        
+        self._texture = texture
+    
     def create(self, renderer):
-        self._texture = textures.Texture.from_files(textures.environment_paths(self._path), target=GL.GL_TEXTURE_CUBE_MAP, wrap=(GL.GL_CLAMP_TO_EDGE,)*3)
-        self._texture.prepare(renderer)
-        
         self._material = materials.CustomMaterial(textures={"background": self._texture})
         self._material.prepare(renderer)
 
         self._geometry = geometries.CustomGeometry()
         self._geometry.prepare(renderer)
-
+    
     def render(self, renderer):
+        if self._texture is None:
+            return
+        
+        self._texture.prepare(renderer)
+        
         model = self.parent._root._transform.to_matrix(n=3, m=4)
         view = vectors.inverse(self.parent._camera._transform.to_matrix(n=3, m=4))
-        projection = projections.perspective(np.pi/2.0, 0.1, 1000.0) #self.parent._camera._projection.to_matrix(n=3, m=4)
+        projection = projections.perspective_inverted(np.pi/2.0, 0.1, 1000.0)
         projection = np.dot(transforms.scale(1.0/self.aspect, n=4), projection)
+        #projection = self.parent._camera._projection.to_matrix(n=3, m=4)
+        #projection = np.dot(transforms.scale(1.0/self.aspect, n=4), projection)
         
         GL.glDepthMask(GL.GL_FALSE)
         
@@ -306,6 +385,16 @@ class AxesView(scenes.View):
     def clear(self):
         pass
     
+    def on_data_changed(self, axis, key, value):
+        time = self.time
+        
+        animation = self.parent._betas[int(axis.index)]
+        
+        if axis.angular and animation.reversed:
+            animation.reverse(time)
+        if (not axis.angular) and (not animation.reversed):
+            animation.reverse(time)
+    
     def create_axes(self, renderer):
         self._axes_actor = actors.SingleBufferComputeActor()
         
@@ -321,17 +410,21 @@ class AxesView(scenes.View):
         self.tick_offset = self.axis_offset + self.axis_count * self.axis_stride
         self.tick_stride = 10
         
+        def origin_identifiers():
+            for index in iterables.repeated(generators.autoincrement(), self.origin_stride):
+                yield origin_identifier()
+        
         def axis_identifiers():
-            for identifier in iterables.repeated(generators.autoincrement(), self.axis_stride):
-                yield self.parent._axes_identifier | identifier
+            for index in iterables.repeated(generators.autoincrement(), self.axis_stride):
+                yield axis_identifier(index)
         
         def tick_identifiers():
-            for identifier in iterables.repeated(generators.autoincrement(), self.tick_stride):
-                yield self.parent._axes_identifier | identifier
+            for index in iterables.repeated(generators.autoincrement(), self.tick_stride):
+                yield axis_identifier(index)
         
         origin_data = vertices.full({
             vertices.Component.Position: origin_generator(),
-            vertices.Component.Identifier: generators.autoincrement(),
+            vertices.Component.Identifier: origin_identifiers(),
         }, format=DEFAULT_VERTEX_ND_FORMAT)
         
         axis_data = vertices.full({
@@ -375,7 +468,10 @@ class AxesView(scenes.View):
         ])
         self._material_normal.prepare(renderer)
         
-        self._material_hover = materials.MultiMaterial([DEFAULT_MATERIAL_HOVER_RGB, DEFAULT_MATERIAL_HOVER_RGB])
+        self._material_hover = materials.MultiMaterial([
+            materials.PhongMaterial(colors=DEFAULT_MATERIAL_COLORS_HOVER_RGB, opacity=1.0, shininess=32.0),
+            materials.PhongMaterial(colors=DEFAULT_MATERIAL_COLORS_HOVER_RGB, opacity=1.0, shininess=32.0),
+        ])
         self._material_hover.prepare(renderer)
         
         self._origin_geometry = geometries.CustomGeometry()
@@ -390,7 +486,7 @@ class AxesView(scenes.View):
         view_nd = vectors.inverse(self.parent._camera_nd._transform.to_matrix())
         
         wrap = 0 if self.parent.model.show_overflow else renderers.Wrap.ClampRepeat
-        compute_program = DEFAULT_AXES_INTERPOLATE_PROGRAMS[DEFAULT_VERTEX_ND_FORMAT, wrap, len(self.parent._transforms)]
+        compute_program = DEFAULT_AXES_PROGRAMS[DEFAULT_VERTEX_ND_FORMAT, wrap, len(self.parent._transforms)]
         with renderer.activated(compute_program, self.parent._transforms_buffer):
             renderer.set_model_view_nd(model_nd, view_nd)
             
@@ -405,8 +501,7 @@ class AxesView(scenes.View):
             
             actor = self._axes_actor
             with renderer.activated(actor._input0_vertex_buffer, actor._input1_vertex_buffer, actor._output_vertex_buffer):
-                renderer.shader_storage_blocks["VertexSrcData0"] = actor._input0_vertex_buffer
-                renderer.shader_storage_blocks["VertexSrcData1"] = actor._input1_vertex_buffer
+                renderer.shader_storage_blocks["VertexSrcData"] = actor._input0_vertex_buffer
                 renderer.shader_storage_blocks["VertexDstData"] = actor._output_vertex_buffer
                 
                 # Origin
@@ -443,78 +538,91 @@ class AxesView(scenes.View):
         projection = self.parent._camera._projection.to_matrix(n=3, m=4)
         projection = np.dot(transforms.scale(1.0/self.aspect, n=4), projection)
         
-        origin_program = DEFAULT_SURFACE_PROGRAMS[self.parent.model.show_shading]
+        alphas_nd = vectors.default_chunk1d(self.parent._alphas_nd)
+        betas_nd = vectors.default_chunk1d(self.parent._betas_nd)
+        
+        shade = renderers.Shade.Phong if self.parent.model.show_shading else 0
+        coordinate_count = len(self.parent.model.axes) - 1
+        
+        origin_program = DEFAULT_ORIGIN_PROGRAMS[materials.DEFAULT_FORMAT, coordinate_count, shade]
         with renderer.activated(origin_program, self.parent._lights, self._origin_geometry):
             renderer.set_projection_nd(projection_nd)
             renderer.set_model_view_projection(model, view, projection)
+            
+            renderer.set_uniform_array_1d("alphas_nd", alphas_nd)
+            renderer.set_uniform_array_1d("betas_nd", betas_nd)
             
             actor = self._axes_actor
             
             material = self._material_hover if len(self.parent._hovering_origins) else self._material_normal
             geometry = actor._geometry
             with renderer.activated(material, geometry):
-                renderer.uniforms['identifier'] = GL.GLuint(self.parent._origin_identifier)
+                renderer.uniforms['identifier'] = GL.GLuint(origin_identifier())
                 renderer.uniforms['size'] = GL.GLfloat(self.parent.origin_size)
                 
                 geometry.draw_indices("default", mode=GL.GL_POINTS, first=self.origin_offset, count=self.origin_stride, renderer=renderer)
         
         
-        axis_program = DEFAULT_AXIS_PROGRAM
+        axis_program = DEFAULT_AXIS_PROGRAMS[materials.DEFAULT_FORMAT, coordinate_count]
         with renderer.activated(axis_program, self.parent._lights, self._axes_actor._geometry):
             renderer.set_projection_nd(projection_nd)
             renderer.set_model_view_projection(model, view, projection)
             
+            renderer.set_uniform_array_1d("alphas_nd", alphas_nd)
+            renderer.set_uniform_array_1d("betas_nd", betas_nd)
+            
             actor = self._axes_actor
-            #'''
-            root = self.parent.model.axes.get('root')
+            
+            root = self.parent.model.axes
             if root is not None:
-                for i, axis in enumerate(root.values()):
-                    material = self._material_hover if i in self.parent._hovering_axes else self._material_normal
+                if not len(self.parent._hovering_axes):
+                    material = self._material_normal
                     geometry = actor._geometry
                     with renderer.activated(material, geometry):
-                        renderer.uniforms['identifier'] = GL.GLuint(self.parent._axes_identifier | i)
                         renderer.uniforms['size'] = GL.GLfloat(self.parent.axis_size)
                         
-                        geometry.draw_indices("default", mode=GL.GL_LINES, first=self.axis_offset + i*self.axis_stride, count=self.axis_stride, renderer=renderer)
-            '''
-            i = 0
-            material = self._material_hover if i in self.parent._hovering_axes else self._material_normal
-            geometry = actor._geometry
-            with renderer.activated(material, geometry):
-                #renderer.uniforms['identifier'] = GL.GLuint(self.parent._axes_identifier | i)
-                renderer.uniforms['size'] = GL.GLfloat(self.parent.axis_size)
-                
-                geometry.draw_indices("default", mode=GL.GL_LINES, first=self.axis_offset, count=self.axis_count * self.axis_stride, renderer=renderer)
-            #'''
+                        #geometry.draw_indices("default", mode=GL.GL_LINES, first=self.axis_offset, count=self.axis_count * self.axis_stride, renderer=renderer)
+                        geometry.draw_indices("default", mode=GL.GL_PATCHES, first=self.axis_offset, count=len(root) * self.axis_stride, patch_vertices=2, renderer=renderer)
+                else:
+                    for i, axis in enumerate(root.values()):
+                        material = self._material_hover if i in self.parent._hovering_axes else self._material_normal
+                        geometry = actor._geometry
+                        with renderer.activated(material, geometry):
+                            renderer.uniforms['identifier'] = GL.GLuint(axis_identifier(i))
+                            renderer.uniforms['size'] = GL.GLfloat(self.parent.axis_size)
+                            
+                            #geometry.draw_indices("default", mode=GL.GL_LINES, first=self.axis_offset + i*self.axis_stride, count=self.axis_stride, renderer=renderer)
+                            geometry.draw_indices("default", mode=GL.GL_PATCHES, first=self.axis_offset + i*self.axis_stride, count=self.axis_stride, patch_vertices=2, renderer=renderer)
         
-        tick_program = DEFAULT_TICK_PROGRAM
+        tick_program = DEFAULT_TICK_PROGRAMS[materials.DEFAULT_FORMAT, coordinate_count]
         with renderer.activated(tick_program, self.parent._lights):
             renderer.set_projection_nd(projection_nd)
             renderer.set_model_view_projection(model, view, projection)
             
+            renderer.set_uniform_array_1d("alphas_nd", alphas_nd)
+            renderer.set_uniform_array_1d("betas_nd", betas_nd)
+            
             actor = self._axes_actor
-            #'''
-            root = self.parent.model.axes.get('root')
+            
+            root = self.parent.model.axes
             if root is not None:
-                for i, axis in enumerate(root.values()):
-                    material = self._material_hover if i in self.parent._hovering_axes else self._material_normal
+                if not len(self.parent._hovering_axes):
+                    material = self._material_normal
                     geometry = actor._geometry
                     with renderer.activated(material, geometry):
-                        renderer.uniforms['identifier'] = GL.GLuint(self.parent._axes_identifier | i)
                         renderer.uniforms['size'] = GL.GLfloat(self.parent.tick_size)
                         
-                        geometry.draw_indices("default", mode=GL.GL_POINTS, first=self.tick_offset + i*self.tick_stride, count=self.tick_stride, renderer=renderer)
-            '''
-            i = 0
-            material = self._material_hover if i in self.parent._hovering_axes else self._material_normal
-            geometry = actor._geometry
-            with renderer.activated(material, geometry):
-                renderer.uniforms['identifier'] = GL.GLuint(self.parent._axes_identifier | i)
-                renderer.uniforms['size'] = GL.GLfloat(self.parent.tick_size)
-                
-                geometry.draw_indices("default", mode=GL.GL_POINTS, first=self.tick_offset, count=self.tick_count * self.tick_stride, renderer=renderer)
-            #'''
-            
+                        geometry.draw_indices("default", mode=GL.GL_POINTS, first=self.tick_offset, count=len(root) * self.tick_stride, renderer=renderer)
+                else:
+                    for i, axis in enumerate(root.values()):
+                        material = self._material_hover if i in self.parent._hovering_axes else self._material_normal
+                        geometry = actor._geometry
+                        with renderer.activated(material, geometry):
+                            renderer.uniforms['identifier'] = GL.GLuint(axis_identifier(i))
+                            renderer.uniforms['size'] = GL.GLfloat(self.parent.tick_size)
+                            
+                            geometry.draw_indices("default", mode=GL.GL_POINTS, first=self.tick_offset + i*self.tick_stride, count=self.tick_stride, renderer=renderer)
+    
     def delete(self, renderer):
         pass
 
@@ -629,6 +737,12 @@ class MarksView(scenes.View):
         #print("->", result.inf_to_nan())
         return result.inf_to_nan()
     
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self._show_marks = True
+        self._show_labels = True
+    
     def clear(self):
         self._mark_actors = {}
     
@@ -649,7 +763,6 @@ class MarksView(scenes.View):
         key = mark.owner.title.lower()
         dataset = mark.owner.schema._parent
         
-        
         # Query
         position = mark["position"].expression
         color = mark["color"].expression if mark["color"].bound else None
@@ -659,27 +772,33 @@ class MarksView(scenes.View):
         color_a = mark["color"]["a"].expression if mark["color"]["a"].bound else None
         shape = mark["shape"].expression if mark["shape"].bound else None
         size = mark["size"].expression if mark["size"].bound else None
+        offset = mark["offset"].expression if mark["offset"].bound else None
         motion = mark["motion"].expression if mark["motion"].bound else None
+        label = mark["label"].expression if mark["label"].bound else None
         
-        select = filter(None, [position, color, color_s, color_v, color_a, shape, size, motion])
+        select = filter(None, [position, color, color_s, color_v, color_a, shape, size, motion, label])
+        groupby = filter(None, [position])
         
         #np.random.seed(1337)
         
+        #print("Query Start.")
+        
         query = md.Query(key, select)
-        result = query(dataset)
+        result = query.manual(dataset, groupby=groupby)
         #print(result.head())
         
+        #print("Query Finish.")
         
         # Actor
         actor = self.get_or_create_actor(key)
-        actor._material =_material = materials.MultiMaterial([
+        actor._material = materials.MultiMaterial([
             materials.PhongMaterial(colors={
                 "ambient": colors.svg.white.hsv,
                 "diffuse": colors.svg.white.hsv,
                 "specular": colors.svg.black.hsv,
                 "emissive": colors.svg.black.hsv,
             }, textures={
-                "ambient": self._texture_atlas,
+                "ambient": self._shape_atlas,
                 "diffuse": self._texture_atlas,
             }, opacity=1.0, shininess=32.0),
             materials.PhongMaterial(colors={
@@ -688,7 +807,7 @@ class MarksView(scenes.View):
                 "specular": colors.svg.black.hsv,
                 "emissive": colors.svg.black.hsv,
             }, textures={
-                "ambient": self._texture_atlas,
+                "ambient": self._shape_atlas,
                 "diffuse": self._texture_atlas,
             }, opacity=1.0, shininess=32.0),
         ])
@@ -699,7 +818,7 @@ class MarksView(scenes.View):
                 "specular": colors.svg.black.hsv,
                 "emissive": colors.svg.black.hsv,
             }, textures={
-                "ambient": self._texture_atlas,
+                "ambient": self._shape_atlas,
                 "diffuse": self._texture_atlas,
             }, opacity=1.0, shininess=32.0),
         '''
@@ -733,13 +852,13 @@ class MarksView(scenes.View):
                     return (value - lower)/(upper - lower)
                 return _continuous_property
         
-        def getter(property, default, continuity=utilities.identity):
+        def getter(property, default, continuity=None):
             if property is None:
                 def _getter(row):
                     return default
                 return _getter
             else:
-                normalize = continuity(property)
+                normalize = utilities.identity if continuity is None else continuity(property)
                 def _getter(row):
                     return normalize(row[md.nameof(property)])
                 return _getter
@@ -834,10 +953,14 @@ class MarksView(scenes.View):
         def as_tex_coord(row):
             if shape is not None:
                 index = getshape(row)
-                index = np.unravel_index(index, self._texture_atlas._shape)
+                index = np.unravel_index(index, self._shape_atlas._provider._shape)
                 return vectors.zeros(*index, n=4)
             
             return vectors.zeros(n=4)
+        
+        # TODO: This is the bottleneck...
+        
+        #print("Data Start.")
         
         position_data = np.ascontiguousarray([as_position(row) for index, row in result.iterrows()], dtype=mdefaults.DEFAULT_DTYPE)
         tex_coord_data = np.ascontiguousarray([as_tex_coord(row) for index, row in result.iterrows()], dtype=mdefaults.DEFAULT_DTYPE)
@@ -846,9 +969,57 @@ class MarksView(scenes.View):
         size_data = np.ascontiguousarray([as_size(row) for index, row in result.iterrows()], dtype=mdefaults.DEFAULT_DTYPE)
         offset_data = np.ascontiguousarray([as_offset(row) for index, row in result.iterrows()], dtype=mdefaults.DEFAULT_DTYPE)
         
-        #print(position_data, size_data)
-        #print(size_data)
+        #print("Data Finish.")
         
+        self._show_labels = label is not None
+        
+        if self._show_labels:
+            #print("Update Labels.")
+            
+            getlabel = getter(label, "")
+            
+            def as_label(row):
+                trunc = lambda value, n: (value[:n] + '..') if len(value) > n else value
+                value = str(getlabel(row))
+                value = trunc(value, 10)
+                return value
+            
+            label_data = [as_label(row) for index, row in result.iterrows()]
+            
+            style = {"fill": colors.svg.white, "stroke": colors.svg.black, "stroke_width": 5.0, "font_size": 1.0, "font_family": "Verdana"} # "font_weight": painters.Weight.Bold
+            self._label_provider.paint([painters.text(item, **style) for item in label_data])
+            #self._label_provider.paint([painters.chain(painters.fill(fill=colors.svg.red), painters.text(item, **style)) for item in label_data])
+            self._label_atlas.request_update()
+            
+            #print("Done.")
+        
+        '''
+        data = [{
+            vertices.Component.Position: as_position(row),
+            vertices.Component.TexCoord: as_tex_coord(row),
+            vertices.Component.Color0: as_color0(row),
+            vertices.Component.Color1: as_color1(row),
+            vertices.Component.Size: as_size(row),
+            vertices.Component.Offset: as_offset(row),
+        } for index, row in result.iterrows()]
+        
+        position_data = np.ascontiguousarray(list(map(accessors.itemgetter(vertices.Component.Position), data)), dtype=mdefaults.DEFAULT_DTYPE)
+        size_data = np.ascontiguousarray(list(map(accessors.itemgetter(vertices.Component.Size), data)), dtype=mdefaults.DEFAULT_DTYPE)
+        offset_data = np.ascontiguousarray(list(map(accessors.itemgetter(vertices.Component.Offset), data)), dtype=mdefaults.DEFAULT_DTYPE)
+        tex_coord_data = map(accessors.itemgetter(vertices.Component.TexCoord), data)
+        color0_data = map(accessors.itemgetter(vertices.Component.Color0), data)
+        color1_data = map(accessors.itemgetter(vertices.Component.Color1), data)
+        '''
+        
+        #axis = list(self.parent.model.axes.keys()).index(key)
+        
+        layer = list(self.parent.model.marks.keys()).index(key)
+        
+        def mark_identifiers(rank):
+            for index in iterables.repeated(generators.autoincrement(), rank):
+                yield mark_identifier(layer, index)
+        
+        #vertex_data = vertices.empty(len(result), format=DEFAULT_VERTEX_ND_FORMAT)
         vertex_data = vertices.full({
             vertices.Component.Position: np.nan_to_num(position_data),
             vertices.Component.TexCoord0: tex_coord_data,
@@ -857,7 +1028,7 @@ class MarksView(scenes.View):
             vertices.Component.Color1: color1_data,
             vertices.Component.Size: size_data,
             vertices.Component.Offset: offset_data,
-            vertices.Component.Identifier: generators.autoincrement(),
+            vertices.Component.Identifier: mark_identifiers(1),
         }, format=DEFAULT_VERTEX_ND_FORMAT)
         
         """
@@ -918,20 +1089,45 @@ class MarksView(scenes.View):
         actor._alpha.play(self.time)
         
         #print(vertex_data, extent)
-        
+    
     def process(self, input):
         pass 
     
     def create(self, renderer):
-        self._material_normal = materials.MultiMaterial([DEFAULT_MATERIAL_NORMAL_HSV, DEFAULT_MATERIAL_NORMAL_HSV])
+        self._shape_atlas = textures.Texture(self.parent.shape_provider, filter=(GL.GL_NEAREST, GL.GL_NEAREST))
+        self._shape_atlas.prepare(renderer)
+        
+        self._texture_atlas = textures.Texture(self.parent.texture_provider, filter=(GL.GL_NEAREST, GL.GL_NEAREST))
+        self._texture_atlas.prepare(renderer)
+        
+        #(8, 128)
+        #self._label_provider = painters.Atlas(shape=(8, 128), size=(2048, 2048))
+        self._label_provider = painters.Atlas(shape=(8, 32), size=(2048, 2048))
+        self._label_provider.paint([])
+        
+        self._label_atlas = textures.Texture(self._label_provider, filter=(GL.GL_NEAREST, GL.GL_NEAREST))
+        self._label_atlas.prepare(renderer)
+        
+        
+        self._material_normal = materials.MultiMaterial([
+            materials.PhongMaterial(colors=copy.copy(DEFAULT_MATERIAL_COLORS_NORMAL_HSV), textures={
+                "ambient": self._shape_atlas, "diffuse": self._texture_atlas,
+            }, opacity=1.0, shininess=32.0),
+            materials.PhongMaterial(colors=copy.copy(DEFAULT_MATERIAL_COLORS_NORMAL_HSV), textures={
+                "ambient": self._shape_atlas, "diffuse": self._texture_atlas,
+            }, opacity=1.0, shininess=32.0),
+        ])
         self._material_normal.prepare(renderer)
         
-        self._material_hover = materials.MultiMaterial([DEFAULT_MATERIAL_HOVER_HSV, DEFAULT_MATERIAL_HOVER_HSV])
+        self._material_hover = materials.MultiMaterial([
+            materials.PhongMaterial(colors=copy.copy(DEFAULT_MATERIAL_COLORS_HOVER_HSV), textures={
+                "ambient": self._shape_atlas, "diffuse": self._texture_atlas,
+            }, opacity=1.0, shininess=32.0),
+            materials.PhongMaterial(colors=copy.copy(DEFAULT_MATERIAL_COLORS_HOVER_HSV), textures={
+                "ambient": self._shape_atlas, "diffuse": self._texture_atlas,
+            }, opacity=1.0, shininess=32.0),
+        ])
         self._material_hover.prepare(renderer)
-        
-        self._texture_atlas = textures.Texture(self.parent.shape_canvas, filter=(GL.GL_NEAREST, GL.GL_NEAREST))
-        self._texture_atlas._shape = np.array([8, 8], dtype=np.uint32)
-        self._texture_atlas.prepare(renderer)
         
         cube_face2_positions = cubes.cube_face_positions(2, mdefaults.DEFAULT_N)
         cube_face2_tex_coords = cubes.cube_face_tex_coords(2, mdefaults.DEFAULT_N)
@@ -965,19 +1161,37 @@ class MarksView(scenes.View):
         
         for key, mark in self.parent.model.marks.items():
             actor = self.get_or_create_actor(key)
-                        
+            
+            if actor.rank == 0:
+                texture0 = self._shape_atlas
+                texture1 = self._label_atlas
+                tex_coord_transform = self.parent.shape_provider.tex_coord_transform
+                tex_coord_modifiers = vectors.zeros(*np.unravel_index(int(mark.shape_index), self.parent.shape_provider._shape), n=4)
+            else:
+                texture0 = gdefaults.DEFAULT_TEXTURE_WHITE if mark.texture is None else mark.texture
+                texture1 = self._label_atlas
+                tex_coord_transform = transforms.identity(n=4)
+                tex_coord_modifiers = vectors.zeros(n=4)
+            
             primaryColor = mark.color_primary_hsva
             actor._material[0].colors["ambient"] = primaryColor[:3]
             actor._material[0].colors["diffuse"] = primaryColor[:3]
             actor._material[0]["opacity"] = primaryColor[3]
+            
+            actor._material[0].textures["ambient"] = texture0
+            actor._material[0].textures["diffuse"] = texture1
             
             secondaryColor = mark.color_secondary_hsva
             actor._material[1].colors["ambient"] = secondaryColor[:3]
             actor._material[1].colors["diffuse"] = secondaryColor[:3]
             actor._material[1]["opacity"] = secondaryColor[3]
             
+            actor._material[1].textures["ambient"] = texture0
+            actor._material[1].textures["diffuse"] = texture1
+            
             actor._color_modifiers = mark.color_modifiers_hsva
-            actor._tex_coord_modifiers = vectors.zeros(*np.unravel_index(int(mark.shape_index), self._texture_atlas._shape), n=4)
+            actor._tex_coord_transform = tex_coord_transform
+            actor._tex_coord_modifiers = tex_coord_modifiers
             actor._size = mark.size
             actor._motion = mark.motion
             actor._visible = mark.visible
@@ -1037,73 +1251,111 @@ class MarksView(scenes.View):
         projection = self.parent._camera._projection.to_matrix(n=3, m=4)
         projection = np.dot(transforms.scale(1.0/self.aspect, n=4), projection)
         
-        for actor in self._mark_actors.values():
-            if not actor._visible:
-                continue
-            
-            shade = renderers.Shade.Phong if self.parent.model.show_shading else 0
-            rank = actor.rank #actor.current_rank(time)
-            bases = actor.bases #actor.current_bases(time)
-            
-            if rank == 0:
-                marks_program = DEFAULT_MARK_PROGRAMS[materials.DEFAULT_FORMAT, shade, rank]
-            else:
-                #marks_program = DEFAULT_MARK_INTERVAL_PROGRAMS[materials.DEFAULT_FORMAT, shade, rank]
-                #actor.set_instanced(False)
-                marks_program = DEFAULT_MARK_INSTANCE_PROGRAMS[materials.DEFAULT_FORMAT, shade, rank]
-            
-            with renderer.activated(marks_program, self.parent._lights):
-                renderer.set_projection_nd(projection_nd)
-                renderer.set_model_view_projection(model, view, projection)
+        alphas_nd = vectors.default_chunk1d(self.parent._alphas_nd)
+        betas_nd = vectors.default_chunk1d(self.parent._betas_nd)
+        
+        shade = renderers.Shade.Phong if self.parent.model.show_shading else 0
+        coordinate_count = len(self.parent.model.axes) - 1
+        
+        if self.parent._model.show_marks and self._show_marks:
+            for i, actor in enumerate(self._mark_actors.values()):
+                if not actor._visible:
+                    continue
                 
-                renderer.uniforms['tex_coord_transform'] = transforms.scale(vectors.vector(1.0/self._texture_atlas._shape, n=3), n=4)
+                rank = actor.rank #actor.current_rank(time)
+                bases = actor.bases #actor.current_bases(time)
                 
-                renderer.set_uniform_array_2d("basis_nd", vectors.default_chunk2d(bases))
+                if rank == 0:
+                    marks_program = DEFAULT_MARK_PROGRAMS[materials.DEFAULT_FORMAT, coordinate_count, shade, rank]
+                else:
+                    #marks_program = DEFAULT_MARK_INTERVAL_PROGRAMS[materials.DEFAULT_FORMAT, shade, rank]
+                    #actor.set_instanced(False)
+                    marks_program = DEFAULT_MARK_INSTANCE_PROGRAMS[materials.DEFAULT_FORMAT, coordinate_count, shade, rank]
                 
-                renderer.uniforms['time'] = GL.GLfloat(time)
-                
-                material = self._material_hover if len(self.parent._hovering_marks) else actor._material
-                geometry = actor._geometry
-                
-                renderer.uniforms['material_index'] = GL.GLint(len(self.parent._hovering_marks))
-                
-                with renderer.activated(material, geometry):
-                    renderer.uniforms['identifier'] = GL.GLuint(self.parent._marks_identifier)
-                    renderer.uniforms['rank'] = GL.GLint(rank)
-                    renderer.uniforms['tex_coord_modifiers'] = actor._tex_coord_modifiers
-                    renderer.uniforms['color_modifiers'] = actor._color_modifiers
-                    renderer.uniforms['size'] = GL.GLfloat(actor._size * self.parent.mark_size)
-                    renderer.uniforms['motion'] = GL.GLfloat(actor._motion)
+                with renderer.activated(marks_program, self.parent._lights):
+                    renderer.set_projection_nd(projection_nd)
+                    renderer.set_model_view_projection(model, view, projection)
+
+                    renderer.set_uniform_array_1d("alphas_nd", alphas_nd)
+                    renderer.set_uniform_array_1d("betas_nd", betas_nd)
                     
-                    if rank == 0:
-                        geometry.draw_indices("default", mode=GL.GL_POINTS, renderer=renderer)
-                    else:
-                        #geometry.draw_indices("default", mode=GL.GL_PATCHES, patch_vertices=1, renderer=renderer)
-                        #geometry.draw_indices_instanced("instance_default", actor.instance_count, mode=GL.GL_TRIANGLES, renderer=renderer)
-                        geometry.draw_indices_instanced("instance_default", actor.instance_count, mode=GL.GL_PATCHES, patch_vertices=3, renderer=renderer)
+                    renderer.set_uniform_array_2d("basis_nd", vectors.default_chunk2d(bases))
+                    
+                    renderer.uniforms['time'] = GL.GLfloat(time)
+                    
+                    material = actor._material
+                    geometry = actor._geometry
+                    
+                    if any(i == layer for layer in map(_identifier_mark_layer.decode, self.parent._hovering_marks)):
+                        # TODO: This is pretty bad...
+                        actor._material[0].colors["ambient"] = self._material_hover[0].colors["ambient"]
+                        actor._material[0].colors["diffuse"] = self._material_hover[0].colors["diffuse"]
+                        
+                        actor._material[1].colors["ambient"] = self._material_hover[1].colors["ambient"] 
+                        actor._material[1].colors["diffuse"] = self._material_hover[1].colors["diffuse"] 
+                    
+                    renderer.uniforms['tex_coord_transform'] = actor._tex_coord_transform 
+                    
+                    with renderer.activated(material, geometry):
+                        renderer.uniforms['identifier'] = GL.GLuint(mark_identifier(i, 0))
+                        renderer.uniforms['rank'] = GL.GLint(rank)
+                        
+                        renderer.uniforms['tex_coord_modifiers'] = actor._tex_coord_modifiers
+                        renderer.uniforms['color_modifiers'] = actor._color_modifiers
+                        renderer.uniforms['size'] = GL.GLfloat(actor._size * self.parent.mark_size)
+                        renderer.uniforms['motion'] = GL.GLfloat(actor._motion)
+                        
+                        if rank == 0:
+                            geometry.draw_indices("default", mode=GL.GL_POINTS, renderer=renderer)
+                        else:
+                            #geometry.draw_indices("default", mode=GL.GL_PATCHES, patch_vertices=1, renderer=renderer)
+                            #geometry.draw_indices_instanced("instance_default", actor.instance_count, mode=GL.GL_TRIANGLES, renderer=renderer)
+                            geometry.draw_indices_instanced("instance_default", actor.instance_count, mode=GL.GL_PATCHES, patch_vertices=3, renderer=renderer)
+        
+        if self.parent._model.show_labels and self._show_labels:
+            gl.clear(GL.GL_DEPTH_BUFFER_BIT)
+            
+            for i, actor in enumerate(self._mark_actors.values()):
+                if not actor._visible:
+                    continue
                 
+                rank = actor.rank
+                
+                labels_program = DEFAULT_LABEL_PROGRAMS[materials.DEFAULT_FORMAT, coordinate_count]
+                
+                with renderer.activated(labels_program, self.parent._lights):
+                    renderer.set_projection_nd(projection_nd)
+                    renderer.set_model_view_projection(model, view, projection)
+
+                    renderer.set_uniform_array_1d("alphas_nd", alphas_nd)
+                    renderer.set_uniform_array_1d("betas_nd", betas_nd)
+                    
+                    renderer.uniforms['time'] = GL.GLfloat(time)
+                    
+                    material = actor._material
+                    geometry = actor._geometry
+                    
+                    renderer.uniforms['tex_atlas_shape'] = self._label_provider.shape
+                    renderer.uniforms['tex_coord_transform'] = self._label_provider.tex_coord_transform
+                    
+                    with renderer.activated(material, geometry):
+                        renderer.uniforms['size'] = GL.GLfloat(self.parent.label_size)
+                        renderer.uniforms['offset'] = GL.GLfloat(0.0) #GL.GLfloat(actor._size * self.parent.mark_size)
+                        
+                        if rank == 0:
+                            geometry.draw_indices("default", mode=GL.GL_POINTS, renderer=renderer)
+                        else:
+                            geometry.draw_indices_instanced("instance_default", actor.instance_count, mode=GL.GL_POINTS, renderer=renderer)
+    
     def delete(self, renderer):
         pass
 
 
 class VisualizationView(scenes.View):
-    _type_identifier_size = 4
-    _data_identifier_size = 32 - _type_identifier_size
-    
-    _type_identifier_offset = _data_identifier_size
-    _data_identifier_offset = 0
-    
-    _type_identifier_mask = (2**_type_identifier_size - 1) << _type_identifier_offset
-    _data_identifier_mask = (2**_data_identifier_size - 1) << _data_identifier_offset
-    
-    _origin_identifier = (1 << (0 + _type_identifier_offset))
-    _axes_identifier = (1 << (1 + _type_identifier_offset))
-    _marks_identifier = (1 << (2 + _type_identifier_offset))
-    
     @property
     def preserve_aspect(self):
         return self._preserve_aspect
-        
+    
     @preserve_aspect.setter
     def preserve_aspect(self, value):
         self._preserve_aspect = value
@@ -1157,47 +1409,42 @@ class VisualizationView(scenes.View):
     @model.setter
     def model(self, value):
         self._model = value
-        self._model.data_changed.subscribe(self._marks.on_data_changed)
+        self._model.axis_data_changed.subscribe(self._axes.on_data_changed)
+        self._model.mark_data_changed.subscribe(self._marks.on_data_changed)
         self._model.binding_changed.subscribe(self._marks.on_binding_changed)
         self._model.visible_changed.subscribe(self.toggle)
     
     @property
-    def color_canvas(self):
-        return self._color_canvas
+    def color_provider(self):
+        return self._color_provider
     
-    @color_canvas.setter
-    def color_canvas(self, value):
-        self._color_canvas = value
-
+    @color_provider.setter
+    def color_provider(self, value):
+        self._color_provider = value
+    
     @property
-    def shape_canvas(self):
-        return self._shape_canvas
+    def shape_provider(self):
+        return self._shape_provider
     
-    @shape_canvas.setter
-    def shape_canvas(self, value):
-        self._shape_canvas = value
+    @shape_provider.setter
+    def shape_provider(self, value):
+        self._shape_provider = value
+    
+    @property
+    def texture_provider(self):
+        return self._texture_provider
+    
+    @texture_provider.setter
+    def texture_provider(self, value):
+        self._texture_provider = value
     
     def __init__(self, model=None, clock=None, size=None, parent=None):
         super().__init__(clock=clock, size=size, parent=parent)
         
-        self._alpha = animations.Animation(0.0, 2.0, ease=animations.ease_cubic_out)
-        self._beta = animations.Animation(0.0, 2.0, ease=animations.ease_cubic_out)
-        
-        self._alphas = [animations.Animation(0.0, 1.0, ease=animations.ease_sine_in_out, reversed=True) for _ in range(mdefaults.DEFAULT_N)]
-        self._betas = [animations.Animation(0.0, 1.0, ease=animations.ease_sine_in_out, reversed=True) for _ in range(mdefaults.DEFAULT_N)]
-        
-        self._camera = scenes.Camera(transform=scenes.Transform(n=3, m=4), projection=scenes.Projection(fov=np.pi/1.5, n=3, m=4))
-        self._camera._transform.translate(vectors.zeros(0, 0, -4.0, n=3))
-        self._camera._transform.scale(vectors.full(2.0, n=3))
-        self._camera_nd = scenes.Camera()
-        
-        self._root = scenes.Node(transform=scenes.Transform(n=3, m=4))
-        self._root_nd = scenes.Node()
-        
         self._lights = lights.MultiLight([lights.Light() for _ in range(GLANCE_LIGHT_COUNT)])
         
-        self._lights[0] = lights.Light(colors.svg.white.darken(0.25), colors.svg.white.darken(0.00), colors.svg.white.darken(0.50))
-        self._lights[0].position = np.asarray([-0.25, -0.5, -1.0, 0.0], dtype=np.float32)
+        self._lights[0] = lights.Light(colors.svg.white.darken(0.5), colors.svg.white.darken(0.5), colors.svg.white.darken(0.75))
+        self._lights[0].position = np.asarray([+0.25, +0.5, +1.0, 0.0], dtype=np.float32)
         
         '''
         for light, color in zip(self.lights, [colors.SVG.LightGreen, colors.SVG.LightSkyBlue, colors.SVG.LightSalmon]):
@@ -1207,7 +1454,7 @@ class VisualizationView(scenes.View):
             light.attenuation =  np.asarray([1.0, 0.0, 0.0], dtype=np.float32)
         '''
         
-        self._background = BackgroundView("environments/dust_{side}.jpg", parent=self)
+        self._environment = BackgroundView(None, parent=self)
         self._axes = AxesView(parent=self)
         self._marks = MarksView(parent=self)
         
@@ -1215,6 +1462,7 @@ class VisualizationView(scenes.View):
         self.axis_size = 1.0/128.0
         self.mark_size = 1.0/16.0
         self.tick_size = 1.0/32.0
+        self.label_size = 1.0
         
         self._hover = False
         self._model = model
@@ -1227,14 +1475,37 @@ class VisualizationView(scenes.View):
         self._hovering_axes = set()
         self._hovering_marks = set()
         
-        self._view_aspect = vectors.ones()
-        self._view_aspect[0] = 2.0
+        self._view_aspect = vectors.full(np.pi/2.0)
+        self._view_aspect[0] *= 2.0
         
         self._view_extent = extents.Extent(-vectors.ones(), +vectors.ones())
         self._model_extent = extents.Extent(-vectors.ones(), +vectors.ones())
                 
         self._color_canvas = None
         self._shape_canvas = None
+        self._texture_canvas = None
+        
+        self._environment_textures = collections.OrderedDict([("none", None)])
+        self._tile_textures = collections.OrderedDict([("none", None)])
+        
+        self._current_environment_index = 0
+        self._current_tile_index = 0
+        
+        self.clear()
+    
+    def add_environment_provider(self, key, provider):
+        texture = textures.Texture(provider, wrap=(GL.GL_CLAMP_TO_EDGE,)*3)
+        self._environment_textures[key] = texture
+    
+    def add_tile_provider(self, key, provider):
+        texture = textures.Texture(provider)
+        self._tile_textures[key] = texture
+    
+    def select_environment(self, index):
+        self._current_environment_index = index
+        keys = list(self._environment_textures.keys())
+        if len(keys) > 0:
+            self._environment.texture = self._environment_textures[keys[self._current_environment_index % len(keys)]]
     
     def process(self, input):
         hovering_origins = set()
@@ -1242,15 +1513,15 @@ class VisualizationView(scenes.View):
         hovering_marks = set()
         
         for touch in input.touches.values():
-            type = touch.target & self._type_identifier_mask
-            data = touch.target & self._data_identifier_mask
-            if type == self._origin_identifier:
+            type = _identifier_type.decode(touch.target)
+            data = _identifier_data.decode(touch.target)
+            if type == ORIGIN_TYPE:
                 hovering_origins.add(data)
                 continue
-            if type == self._axes_identifier:
+            if type == AXIS_TYPE:
                 hovering_axes.add(data)
                 continue
-            if type == self._marks_identifier:
+            if type == MARK_TYPE:
                 hovering_marks.add(data)
                 continue
         
@@ -1263,28 +1534,36 @@ class VisualizationView(scenes.View):
             for key in range(inputs.Key._1, inputs.Key._1 + mdefaults.DEFAULT_N):
                 if key in input.keys:
                     if input.keys.get(inputs.Key.Left):
-                        delta[key - inputs.Key._1] -= 1.0
+                        delta[key - inputs.Key._1] -= 1.0 * self._camera_nd._transform.scaling[key - inputs.Key._1]
                     if input.keys.get(inputs.Key.Right):
-                        delta[key - inputs.Key._1] += 1.0
+                        delta[key - inputs.Key._1] += 1.0 * self._camera_nd._transform.scaling[key - inputs.Key._1]
         
         self._camera_nd._transform._delta_translation = delta
         
         if self._orbit and not self._hover:
             self._root._transform._delta_rotation = vectors.zeros(0.25, 0, 0, n=3)
+            #self._root._transform._delta_rotation = vectors.zeros(0.25, 0.25, 0, n=3)
         else:
             self._root._transform._delta_rotation = vectors.zeros(0.00, 0, 0, n=3)
         
         #print(self._hovering_axes)
-        
+    
     def on_key_press(self, state):
         pass
     
     def on_key_release(self, state):
-        pass
+        is_valid_dimension = predicates.between(inputs.Key._1, inputs.Key._1 + mdefaults.DEFAULT_N)
+        if is_valid_dimension(state.identifier):
+            i = state.identifier - inputs.Key._1
+            self._betas[i].reverse(self.time)
+        if state.identifier == inputs.Key.N:
+            self.select_environment(self._current_environment_index + 1)
+        if state.identifier == inputs.Key.M:
+            self.select_environment(self._current_environment_index - 1)
     
     def on_drop(self, state):
-        type = state.target & self._type_identifier_mask
-        data = state.target & self._data_identifier_mask
+        type = _identifier_type.decode(state.target) # & self._type_identifier_mask
+        data = _identifier_data.decode(state.target) # & self._data_identifier_mask
         
         expression = state.data
         owner = expressions.ownerof(expression)
@@ -1293,18 +1572,17 @@ class VisualizationView(scenes.View):
             logger.warn('Ignoring ownerless expression "{}".'.format(expression))
         else:
             key = owner.title.lower()
-            axis = self._model.get_or_create_axis(key)
-            mark = self._model.get_or_create_mark(key, order=0, owner=owner)
+            mark = self._model.get_or_create_mark(key, order=0, owner=owner, options={"texture": self._tile_textures})
             
-            if type == self._origin_identifier:
-                self._model.auto_bind_origin(expression, mark, axis)
-            elif type == self._axes_identifier:
+            if type == ORIGIN_TYPE:
+                self._model.auto_bind_origin(expression, mark)
+            elif type == AXIS_TYPE:
                 axis = self._model.get_index(axis, data)
                 self._model.auto_bind_axis(expression, mark, axis)
-            elif type == self._marks_identifier:
+            elif type == MARK_TYPE:
                 self._model.bind_color(mark, expression)
             else:
-                self._model.auto_bind(expression, mark, axis)
+                self._model.auto_bind(expression, mark)
     
     def toggle(self, index):
         if 0 <= index < len(self._alphas):
@@ -1318,15 +1596,15 @@ class VisualizationView(scenes.View):
         self._betas = [animations.Animation(0.0, 1.0, ease=animations.ease_sine_in_out, reversed=True) for _ in range(mdefaults.DEFAULT_N)]
         
         self._camera = scenes.Camera(transform=scenes.Transform(n=3, m=4), projection=scenes.Projection(fov=np.pi/1.5, n=3, m=4))
-        self._camera._transform.translate(vectors.zeros(0, 0, -4.0, n=3))
-        self._camera._transform.scale(vectors.full(2.0, n=3))
+        self._camera._transform.translate(vectors.zeros(0, 0, 2.0*np.pi, n=3))
+        self._camera._transform.scale(vectors.full(np.pi, n=3))
         self._camera_nd = scenes.Camera()
         
         self._root = scenes.Node(transform=scenes.Transform(n=3, m=4))
         self._root_nd = scenes.Node()
         
-        self._view_aspect = vectors.ones()
-        self._view_aspect[0] = 2.0
+        self._view_aspect = vectors.full(np.pi/2.0)
+        self._view_aspect[0] *= 2.0
         
         self._view_extent = extents.Extent(-vectors.ones(), +vectors.ones())
         self._model_extent = extents.Extent(-vectors.ones(), +vectors.ones())
@@ -1385,13 +1663,18 @@ class VisualizationView(scenes.View):
         
         self.transforms = [transforms.identity()]
         
-        self._background.create(renderer)
+        self.select_environment(self._current_environment_index)
+        
+        self._environment.create(renderer)
         self._axes.create(renderer)
         self._marks.create(renderer)
     
     def update(self, renderer):
         time = self.time
         delta = 1.0/30.0
+        
+        self._alphas_nd = vectors.vector([animation(time) for animation in self._alphas])
+        self._betas_nd = vectors.vector([animation(time) for animation in self._betas])
         
         self._camera.update(delta)
         self._camera_nd.update(delta)
@@ -1412,7 +1695,7 @@ class VisualizationView(scenes.View):
             transform = extents.transform_extent_min if self._preserve_aspect else extents.transform_extent
             self.update_camera_transform(*transform(self._model_extent,  self._view_extent))
         
-        self._background.update(renderer)
+        self._environment.update(renderer)
         self._axes.update(renderer)
         self._marks.update(renderer)
         
@@ -1431,14 +1714,12 @@ class VisualizationView(scenes.View):
         gl.clear()
         
         if self._model.show_background:
-            self._background.size = self.size
-            self._background.render(renderer)
+            self._environment.render(renderer)
         
         if self._model.show_axes:
             self._axes.render(renderer)
         
-        if self._model.show_marks:
-            self._marks.render(renderer)
+        self._marks.render(renderer)
     
     def delete(self, renderer):
         self._marks.update(renderer)

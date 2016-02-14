@@ -1,3 +1,2 @@
 from .painters import *
-
-from .textures import Canvas
+from .textures import *

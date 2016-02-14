@@ -1,4 +1,5 @@
 import collections
+import enum
 import logging
 
 from encore import accessors, functions, objects, utilities
@@ -37,26 +38,51 @@ class Observable(object):
             subscriber(*args, **kwargs)
 
 
+class Group(objects.Object):
+    title = objects.attrproperty("title", "Untitled")
+    visible = objects.attrproperty("visible", True)
+    
+    def __init__(self, items, *args, **kwargs):
+        super().__init__(items=items)
+        
+        with objects.direct_access(self):
+            self.data_changed = Observable()
+        
+        objects.attrsof(self).update(kwargs)
+
+    def increment_angular(self):
+        items = objects.itemsof(self)
+        angular_count = sum(item.angular for item in items.values()) 
+        angular_count = (angular_count + 1) % len(items)
+        for i, item in enumerate(items.values()):
+            item.angular = i < angular_count
+
+
 class Axis(objects.Object):
     title = objects.attrproperty("title", "Untitled")
     type = objects.attrproperty("type", None)
-    group = objects.attrproperty("group", False)
+    angular = objects.attrproperty("angular", False)
     visible = objects.attrproperty("visible", True)
     
     @title.getter
     def title(self):
         return accessors.getitem(objects.attrsof(self), "title", str(self.index))
+      
+    @angular.setter
+    def angular(self, value):
+        accessors.setitem(objects.attrsof(self), "angular", value)
+        self.data_changed(self, (), value)
     
     def __init__(self, *args, **kwargs):
         super().__init__(items=collections.OrderedDict())
         
         with objects.direct_access(self):
-            self.index = -1
+            self.data_changed = Observable()
         
         objects.attrsof(self).update(kwargs)
 
+    
 Axis._codec = objects.Codec(Axis)
-Axis._codec.items = Axis._codec
 
     
 def as_number(expression):
@@ -113,13 +139,30 @@ class Property(objects.Object):
         accessors.delitem(objects.attrsof(self), "data")
         self.data_changed(self, (), None)
     
+    @property
+    def options(self):
+        return self._options
+    
+    @options.setter
+    def options(self, value):
+        self._options = value
+        self.options_changed(self, (), value)
+    
+    @options.deleter
+    def options(self):
+        del self._options
+        self.options_changed(self, (), None)
+    
     def __init__(self, *args, **kwargs):
         super().__init__(items=collections.OrderedDict())
         
         with objects.direct_access(self):
+            self.data_changed = Observable()
+            self.options_changed = Observable()
+            
+            self.options = kwargs.get("options", None)
             self.default = kwargs.get("default", None)
             self.coerce = kwargs.get("coerce", utilities.identity)
-            self.data_changed = Observable()
         
         objects.attrsof(self).update(kwargs)
     
@@ -157,33 +200,42 @@ class Mark(objects.Object):
     visible = objects.attrproperty("visible", True)
     
     @classmethod
-    def default_properties(cls, obj):
+    def default_properties(cls, obj, options=None):
         position_expression = md.Position[defaults.DEFAULT_N]()
         
         position = Property(title="Position", type="Position", expression=position_expression, default=None, visible=False)
-        color = Property(title="Color", type="Color", coerce=as_color)
-        color["primary"] = Property(title="Primary", type="Color", default="#0000ff", visible=False) 
-        color["secondary"] = Property(title="Secondary", type="Color", default="#00ff00", visible=False) 
+        
+        color = Property(title="Color", type="Color", options=accessors.getitem(options, "color", None), coerce=as_color)
+        color["primary"] = Property(title="Primary", type="Color", default="#ffffff", visible=False) 
+        color["secondary"] = Property(title="Secondary", type="Color", default="#ffffff", visible=False) 
         color["palette"] = Property(title="Palette", type="String", default="brewer.ylgnbu", visible=False)
         color["h"] = Property(title="Hue", type="Decimal", coerce=md.ordinal, default=1.0, visible=False) 
         color["s"] = Property(title="Saturation", type="Decimal", coerce=md.ordinal, default=1.0) 
         color["v"] = Property(title="Value", type="Decimal", coerce=md.ordinal, default=1.0)
         color["a"] = Property(title="Alpha", type="Decimal", coerce=md.ordinal, default=1.0)
-        shape = Property(title="Shape", type="Shape")
-        shape["index"] = Property(title="Index", type="Integer", default=0, visible=False) 
-        shape["palette"] = Property(title="Palette", type="String", default="geometric.geometric_black", visible=False)   
-        texture = Property(title="Texture", type="Texture", default=None)
-        size = Property(title="Size", type="Decimal", coerce=md.ordinal, default=1.0)
-        label = Property(title="Label", type="String", default="", visible=False)
+        
+        shape = Property(title="Shape", type="Shape", options=accessors.getitem(options, "shape", None))
+        shape["index"] = Property(title="Index", type="Integer", default=0, visible=False)
+        shape["palette"] = Property(title="Palette", type="String", default="geometric.geometric_black", visible=False)
+        
+        texture = Property(title="Texture", type="Texture", default=None, options=accessors.getitem(options, "texture", None))
+        texture["index"] = Property(title="Index", type="Integer", default=0, visible=False)
+        texture["palette"] = Property(title="Palette", type="String", default="basic.grid", visible=False)
+        
+        size = Property(title="Size", type="Decimal", coerce=md.ordinal, default=0.5)
+        offset = Property(title="Offset", type="Decimal", coerce=md.ordinal, default=0.0, visible=False)
         motion = Property(title="Motion", type="Decimal", coerce=md.ordinal, default=0.0)
+        
+        label = Property(title="Label", type="String", default="")
         
         obj.setdefault("position", position)
         obj.setdefault("color", color)
         obj.setdefault("shape", shape)
         obj.setdefault("texture", texture) 
         obj.setdefault("size", size)
-        obj.setdefault("label", label)
+        obj.setdefault("offset", offset)
         obj.setdefault("motion", motion)
+        obj.setdefault("label", label)
     
     @property
     def position(self):
@@ -204,6 +256,10 @@ class Mark(objects.Object):
     @property
     def motion(self):
         return accessors.getattr(accessors.getitem(self, "motion", None), "data", None)
+    
+    @property
+    def label(self):
+        return accessors.getattr(accessors.getitem(self, "label", None), "data", None)
     
     @property
     def color_h(self):
@@ -278,10 +334,14 @@ class Mark(objects.Object):
         return palettes.shape_palettes(value)
     
     @property
+    def texture(self):
+        return accessors.getattr(accessors.getitem(self, "texture", None), "data", None)
+    
+    @property
     def title(self):
         return self.owner.title
     
-    def __init__(self, order=None, owner=None):
+    def __init__(self, order=None, owner=None, options=None):
         super().__init__(items=collections.OrderedDict())
         
         with objects.direct_access(self):
@@ -291,7 +351,7 @@ class Mark(objects.Object):
         self.order = order
         self.owner = owner
         
-        self.default_properties(self)
+        self.default_properties(self, options=options)
     
     def __setitem__(self, key, value):
         def _notify(obj, key_, value_):
@@ -313,21 +373,67 @@ class Guide(objects.Object):
 Guide._codec = objects.Codec(Guide)
 
 
+class Arrangement(enum.IntEnum):
+    Perpendicular = 0
+    Parallel = 1
+
+
+class PerpendicularAxisView(collections.Mapping):
+    def __init__(self, axes):
+        super().__init__()
+        
+        self._axes = axes
+    
+    def __getitem__(self, key):
+        return Group(self._axes)
+    
+    def __iter__(self):
+        return iter(["root"])
+    
+    def __len__(self):
+        return 1
+
+
+class ParallelAxisView(collections.Mapping):
+    def __init__(self, axes):
+        super().__init__()
+        
+        self._axes = axes
+    
+    def __getitem__(self, key):
+        return Group({key: self._axes[key]})
+    
+    def __iter__(self):
+        return iter(self._axes)
+    
+    def __len__(self):
+        return len(self._axes)
+
+
 class Visualization(objects.Object):
     title = objects.attrproperty("title", "Untitled")
+    arrangement = objects.attrproperty("arrangement", Arrangement.Perpendicular)
     
     @property
     def axes(self):
-        return objects.attrsof(self).setdefault("axes", {})
+        return objects.attrsof(self).setdefault("axes", collections.OrderedDict())
+    
+    @property
+    def axes_view(self):
+        if self.arrangement == Arrangement.Perpendicular:
+            return PerpendicularAxisView(self.axes)
+        if self.arrangement == Arrangement.Parallel:
+            return ParallelAxisView(self.axes)
+        return None
     
     @property
     def marks(self):
-        return objects.attrsof(self).setdefault("marks", {})
+        return objects.attrsof(self).setdefault("marks", collections.OrderedDict())
     
     @property
     def guides(self):
-        return objects.attrsof(self).setdefault("guides", {})
-
+        return objects.attrsof(self).setdefault("guides", collections.OrderedDict())
+    
     @classmethod
     def default_properties(cls, obj):
         show_background = Property(title="Background", type="Boolean", data=False)
@@ -335,16 +441,16 @@ class Visualization(objects.Object):
         show_overflow = Property(title="Overflow", type="Boolean", data=False)
         show_axes = Property(title="Axes", type="Boolean", data=True)
         show_marks = Property(title="Marks", type="Boolean", data=True)
-        show_guides = Property(title="Guides", type="Boolean", data=True)
-
+        show_labels = Property(title="Labels", type="Boolean", data=True)
+        show_guides = Property(title="Guides", type="Boolean", data=False)
+        
         obj.setdefault("show_background", show_background)
         obj.setdefault("show_shading", show_shading)
         obj.setdefault("show_overflow", show_overflow)
         obj.setdefault("show_axes", show_axes)
         obj.setdefault("show_marks", show_marks)
+        obj.setdefault("show_labels", show_labels)
         obj.setdefault("show_guides", show_guides)
-        
-        obj.axes.setdefault("root", Axis(group=True))
     
     @property
     def show_background(self):
@@ -367,6 +473,10 @@ class Visualization(objects.Object):
         return accessors.getattr(accessors.getitem(self, "show_marks", None), "data", True)
     
     @property
+    def show_labels(self):
+        return accessors.getattr(accessors.getitem(self, "show_labels", None), "data", True)
+    
+    @property
     def show_guides(self):
         return accessors.getattr(accessors.getitem(self, "show_guides", None), "data", True)
     
@@ -377,7 +487,8 @@ class Visualization(objects.Object):
             self.axis_identifiers = functions.counter(0)
             self.mark_identifiers = functions.counter(0)
             
-            self.data_changed = Observable()
+            self.axis_data_changed = Observable()
+            self.mark_data_changed = Observable()
             self.binding_changed = Observable()
             self.visible_changed = Observable()
             
@@ -389,14 +500,21 @@ class Visualization(objects.Object):
         self.visible_changed(index)
     
     def get_or_create_axis(self, key, *args, **kwargs):
-        return self.axes['root']
+        result = accessors.getitem(self.axes, key, None)
+        
+        if result is None:
+            result = Axis(*args, **kwargs)
+            result.data_changed.subscribe(self.axis_data_changed)
+            accessors.setitem(self.axes, key, result)
+        
+        return result
     
     def get_or_create_mark(self, key, *args, **kwargs):
         result = accessors.getitem(self.marks, key, None)
         
         if result is None:
             result = Mark(*args, **kwargs)
-            result.data_changed.subscribe(self.data_changed)
+            result.data_changed.subscribe(self.mark_data_changed)
             accessors.setitem(self.marks, key, result)
         
         return result
@@ -404,27 +522,20 @@ class Visualization(objects.Object):
     def get_index(self, axis, index):
         return next(iter(x for x in recursive_itervalues(axis) if x.index == index), None)
     
-    def create_axis(self, parent, type):
-        # TODO: This is a mess...
-        root = self.axes['root']
+    def create_axis(self, type):
+        axis_count = len(self.axes)
         
-        def next_index():
-            return len([x for x in recursive_itervalues(root) if not x.group])
+        def update_axis_indices(axes):
+            for index, value in axes.items():
+                value.index = index
         
-        def update_indices():
-            leaves = [x for x in recursive_itervalues(root) if not x.group]
-            for i, leaf in enumerate(leaves):
-                leaf.index = i
-        
-        index = next_index()
-        
-        if index < defaults.DEFAULT_N:
+        if axis_count < defaults.DEFAULT_N:
             key = str(self.axis_identifiers())
-            parent[key] = Axis(type=type.name)
-            update_indices()
-            return index
+            self.get_or_create_axis(key, type=type.name)
+            update_axis_indices(self.axes)
+            return axis_count
         else:
-            logger.warn('Exhausted dimensions "{}/{}"'.format(index, defaults.DEFAULT_N))
+            logger.warn('Exhausted dimensions "{}/{}"'.format(axis_count, defaults.DEFAULT_N))
             return None
     
     def bind(self, mark, key, expression):
@@ -443,7 +554,7 @@ class Visualization(objects.Object):
         else:
             logger.warn('Unknown property "{}".'.format(key))
     
-    def auto_bind(self, expression, mark, axis):
+    def auto_bind(self, expression, mark):
         type = expressions.typeof(expression)
         
         expression = as_position(expression)
@@ -452,7 +563,8 @@ class Visualization(objects.Object):
         result = mark["position"].expression
         for i in range(size):
             item = expression[i]
-            index = self.create_axis(axis, md.typeof(item))
+            type = md.typeof(item)
+            index = self.create_axis(type)
             
             if index is not None:
                 result[index] = item
@@ -460,10 +572,9 @@ class Visualization(objects.Object):
         
         self.bind_position(mark, result)
     
-    def auto_bind_origin(self, expression, mark, axis):
-        type = expressions.typeof(expression)
-        
-        index = self.create_axis(axis, type)
+    def auto_bind_origin(self, expression, mark):
+        type = md.typeof(expression)
+        index = self.create_axis(type)
         
         if index is not None:
             self.bind_position_item(mark, index, expression)

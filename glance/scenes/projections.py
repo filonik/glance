@@ -24,6 +24,6 @@ class Projection(object):
     
     def to_matrix(self, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
         if self.perspective:
-            return projections.general_perspective(self.fov, self.near, self.far, n=n, m=m, dtype=dtype)
+            return projections.general_perspective_inverted(self.fov, self.near, self.far, n=n, m=m, dtype=dtype)
         else:
-            return projections.general_orthogonal(self.lower, self.upper, n=n, m=m, dtype=dtype)
+            return projections.general_orthogonal_inverted(self.lower, self.upper, n=n, m=m, dtype=dtype)

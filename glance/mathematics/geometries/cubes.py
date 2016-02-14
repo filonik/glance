@@ -59,9 +59,12 @@ def cube_colors(n, dtype=np.float32):
 def cube_indices(n):
     return range(cube_vertex_count(n))
 
-def cube_binary_indices(n, dtype=np.uint32):
+def cube_binary_indices(n, flip=None, dtype=np.uint32):
     for i in cube_indices(n):
-        yield np.array(mathematics.encode_binary(i, n), dtype=dtype)
+        value = np.array(mathematics.encode_binary(i, n), dtype=np.bool_)
+        if flip is not None:
+            value ^= flip
+        yield np.array(value, dtype=dtype)
 
 def cube_signed_indices(n, dtype=np.float32):
     for i in cube_binary_indices(n, dtype=dtype):
@@ -77,16 +80,20 @@ def cube_face_bases(k, n, dtype=np.float32):
 
 def cube_face_positions(k, n, dtype=np.float32):
     def _cube_face_positions(k, n, dtype=np.float32):
-        for basis, face_basis in cube_face_bases(k, n, dtype=dtype):
+        d = vectors.ones(n=k, dtype=dtype)
+        d[0] *= -1.0
+        for a, b in cube_face_bases(k, n, dtype=dtype):
+            d[0] *= -1.0
             for i in cube_signed_indices(n-k, dtype=dtype):
-                yield [np.dot(i, basis) + np.dot(j, face_basis) for j in cube_signed_indices(k, dtype=dtype)]
+                d[0] *= -1.0
+                yield [np.dot(i, a) + np.dot(j * d, b) for j in cube_signed_indices(k, dtype=dtype)]
     def flatten(iterable):
         yield from [item for items in iterable for item in items]
     return np.array(list(flatten(_cube_face_positions(k, n, dtype=dtype))), dtype=dtype)
 
 def cube_face_tex_coords(k, n, dtype=np.float32):
     def _cube_face_tex_coords(k, n, dtype=np.float32):
-        for basis, face_basis in cube_face_bases(k, n, dtype=dtype):
+        for a, b in cube_face_bases(k, n, dtype=dtype):
             for i in cube_binary_indices(n-k, dtype=dtype):
                 yield list(cube_binary_indices(k, dtype=dtype))
     def flatten(iterable):

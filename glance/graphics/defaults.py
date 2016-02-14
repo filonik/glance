@@ -22,6 +22,7 @@ DEFAULT_WORK_GROUP_SIZE = 64
 
 DEFAULT_RENDERER = renderers.Renderer()
 
+DEFAULT_TEXTURE_EMPTY = textures.Texture.from_data(target=GL.GL_TEXTURE_2D, size=(1, 1), image=np.array([[(0, 0, 0, 0)]], dtype=np.uint8), format=GL.GL_RGBA)
 DEFAULT_TEXTURE_BLACK = textures.Texture.from_data(target=GL.GL_TEXTURE_2D, size=(1, 1), image=np.array([[(0, 0, 0, 255)]], dtype=np.uint8), format=GL.GL_RGBA)
 DEFAULT_TEXTURE_WHITE = textures.Texture.from_data(target=GL.GL_TEXTURE_2D, size=(1, 1), image=np.array([[(255, 255, 255, 255)]], dtype=np.uint8), format=GL.GL_RGBA)
 

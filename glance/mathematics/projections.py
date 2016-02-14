@@ -37,6 +37,12 @@ def perspective(fov, n, f, dtype=defaults.DEFAULT_DTYPE):
 def perspective(fov, n, f, dtype=defaults.DEFAULT_DTYPE):
     cotf = n/np.tan(fov/2.0)
     return frustum(-cotf, +cotf, -cotf, +cotf, n, f, dtype=dtype)
+
+def perspective_inverted(fov, n, f, dtype=defaults.DEFAULT_DTYPE):
+    result = perspective(fov, n, f, dtype=dtype)
+    result[2, 2] *= -1.0
+    result[2, 3] *= -1.0
+    return result
 #'''
 
 
@@ -44,6 +50,12 @@ def general_orthogonal(lower, upper, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M,
     sx = upper + lower
     dx = upper - lower
     return transforms.scale_translate(+2.0*(1.0/dx), -(sx/dx), n=m, dtype=dtype)
+
+
+def general_orthogonal_inverted(lower, upper, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+    result = general_orthogonal(lower, upper, n=n, m=m, dtype=dtype)
+    result[n-1, n-1] *= -1.0
+    return result
 
 
 def general_frustum(lower, upper, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
@@ -65,6 +77,13 @@ def general_perspective(fov, near, far, n=defaults.DEFAULT_N, m=defaults.DEFAULT
     lower[n-1] = near
     upper[n-1] = far
     return general_frustum(lower, upper, n=n, m=m, dtype=dtype)
+
+
+def general_perspective_inverted(fov, near, far, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+    result = general_perspective(fov, near, far, n=n, m=m, dtype=dtype)
+    result[n-1, n-1] *= -1.0
+    result[n-1, m-1] *= -1.0
+    return result
 
 
 def diagonal(dst, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=np.float32):

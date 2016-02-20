@@ -16,18 +16,6 @@ from ..graphics import resources, buffers
 logger = logging.getLogger(__name__)
 
 
-def simplex_strip_to_simplex_indices(n):
-    def _simplex_strip_to_simplex_indices(indices, dtype=np.uint32):
-        result = []
-        for i, index in enumerate(iterables.windowed(indices, n+1)):
-            result.extend(index if i%2 else reversed(index))
-        return np.array(result, dtype=dtype)
-    return _simplex_strip_to_simplex_indices
-
-line_strip_to_line_indices = simplex_strip_to_simplex_indices(1)
-triangle_strip_to_triangle_indices = simplex_strip_to_simplex_indices(2)
-
-
 class SimpleGeometry(resources.Resource):
     def __init__(self):
         super(SimpleGeometry, self).__init__()
@@ -109,15 +97,23 @@ class CustomGeometry(resources.Resource):
 
         self._first = Unspecified
         self._count = Unspecified
-
+    
     @decorators.indexedproperty
     def vertex_buffers(self, key):
         return self._vbos[key]
-
+    
+    @vertex_buffers.setter
+    def vertex_buffers(self, key, value):
+        self._vbos[key] = value
+    
     @decorators.indexedproperty
     def index_buffers(self, key):
         return self._ibos[key]
-
+    
+    @index_buffers.setter
+    def index_buffers(self, key, value):
+        self._ibos[key] = value
+    
     def prepare(self, renderer):
         result = True
 

@@ -25,15 +25,15 @@ def parallel_axis(i, j, offset, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtyp
     return result
 
 
-def perpendicular_axes(direction=None, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+def perpendicular_axes(direction=None, k=0, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
     direction = vectors.unit(0, n=n, dtype=dtype) if direction is None else direction
-    for i in range(-1, n+1):
+    for i in range(0 - k, n + k):
         yield perpendicular_axis(i, direction*center(i, n), n=n, m=m,  dtype=dtype)
 
 
-def parallel_axes(direction=None, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+def parallel_axes(direction=None, k=0, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
     direction = vectors.unit(0, n=n, dtype=dtype) if direction is None else direction
-    for i in range(-1, n+1):
+    for i in range(0 - k, n + k):
         yield parallel_axis(i, 1, direction*center(i, n), n=n, m=m, dtype=dtype)
 
 

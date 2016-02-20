@@ -54,10 +54,10 @@ class Transform(object):
         n = min(len(self._scaling), len(value))
         self._scaling[:n] = value[:n]
     
-    def __init__(self, translation=vectors.zeros(n=0), rotation=vectors.zeros(n=0), scaling=vectors.ones(n=0), n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+    def __init__(self, translation=vectors.zeros(n=0), rotation=vectors.zeros(n=0), scaling=vectors.ones(n=0), reversed=False, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
         super().__init__()
         
-        self._reverse = False
+        self._reversed = reversed
         
         self._translation = vectors.zeros(*translation, n=m-1, dtype=dtype)
         self._rotation = vectors.zeros(*rotation, n=m-1, dtype=dtype)
@@ -89,7 +89,10 @@ class Transform(object):
         #np.dot(rotation, transforms.translate_scale(self._translation, self._scaling, n=m, dtype=dtype))
         #np.dot(rotation, transforms.scale_translate(self._scaling, self._translation, n=m, dtype=dtype))
         
-        if self._reverse:
+        if self._reversed:
             return vectors.dot(translate, rotate, scale) #TRS - Order
         else:
             return vectors.dot(scale, rotate, translate) #SRT - Order
+
+    def __str__(self):
+        return str(self.to_matrix())

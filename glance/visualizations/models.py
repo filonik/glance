@@ -59,6 +59,7 @@ class Group(objects.Object):
 
 
 class Axis(objects.Object):
+    index = objects.attrproperty("index", -1)
     title = objects.attrproperty("title", "Untitled")
     type = objects.attrproperty("type", None)
     angular = objects.attrproperty("angular", False)
@@ -71,7 +72,12 @@ class Axis(objects.Object):
     @angular.setter
     def angular(self, value):
         accessors.setitem(objects.attrsof(self), "angular", value)
-        self.data_changed(self, (), value)
+        self.data_changed(self, ("angular",), value)
+        
+    @visible.setter
+    def visible(self, value):
+        accessors.setitem(objects.attrsof(self), "visible", value)
+        self.data_changed(self, ("visible",), value)
     
     def __init__(self, *args, **kwargs):
         super().__init__(items=collections.OrderedDict())
@@ -376,7 +382,10 @@ Guide._codec = objects.Codec(Guide)
 class Arrangement(enum.IntEnum):
     Perpendicular = 0
     Parallel = 1
-
+    
+    @classmethod
+    def cycle(cls, value, step=1):
+        return cls((value + step) % len(cls))
 
 class PerpendicularAxisView(collections.Mapping):
     def __init__(self, axes):
@@ -436,11 +445,12 @@ class Visualization(objects.Object):
     
     @classmethod
     def default_properties(cls, obj):
-        show_background = Property(title="Background", type="Boolean", data=False)
+        show_background = Property(title="Background", type="Boolean", data=True)
         show_shading = Property(title="Shading", type="Boolean", data=False)
         show_overflow = Property(title="Overflow", type="Boolean", data=False)
         show_axes = Property(title="Axes", type="Boolean", data=True)
         show_marks = Property(title="Marks", type="Boolean", data=True)
+        show_joins = Property(title="Joins", type="Boolean", data=True)
         show_labels = Property(title="Labels", type="Boolean", data=True)
         show_guides = Property(title="Guides", type="Boolean", data=False)
         
@@ -449,6 +459,7 @@ class Visualization(objects.Object):
         obj.setdefault("show_overflow", show_overflow)
         obj.setdefault("show_axes", show_axes)
         obj.setdefault("show_marks", show_marks)
+        obj.setdefault("show_joins", show_joins)
         obj.setdefault("show_labels", show_labels)
         obj.setdefault("show_guides", show_guides)
     
@@ -473,6 +484,10 @@ class Visualization(objects.Object):
         return accessors.getattr(accessors.getitem(self, "show_marks", None), "data", True)
     
     @property
+    def show_joins(self):
+        return accessors.getattr(accessors.getitem(self, "show_joins", None), "data", True)
+    
+    @property
     def show_labels(self):
         return accessors.getattr(accessors.getitem(self, "show_labels", None), "data", True)
     
@@ -490,14 +505,10 @@ class Visualization(objects.Object):
             self.axis_data_changed = Observable()
             self.mark_data_changed = Observable()
             self.binding_changed = Observable()
-            self.visible_changed = Observable()
-            
+        
         objects.attrsof(self).update(kwargs)
         
         self.default_properties(self)
-    
-    def toggle(self, index):
-        self.visible_changed(index)
     
     def get_or_create_axis(self, key, *args, **kwargs):
         result = accessors.getitem(self.axes, key, None)
@@ -519,14 +530,14 @@ class Visualization(objects.Object):
         
         return result
         
-    def get_index(self, axis, index):
-        return next(iter(x for x in recursive_itervalues(axis) if x.index == index), None)
+    def get_axis_by_index(self, index):
+        return next(iter(axis for axis in self.axes.values() if axis.index == index), None)
     
     def create_axis(self, type):
         axis_count = len(self.axes)
         
         def update_axis_indices(axes):
-            for index, value in axes.items():
+            for index, value in enumerate(axes.values()):
                 value.index = index
         
         if axis_count < defaults.DEFAULT_N:
@@ -568,7 +579,6 @@ class Visualization(objects.Object):
             
             if index is not None:
                 result[index] = item
-                self.toggle(index)
         
         self.bind_position(mark, result)
     

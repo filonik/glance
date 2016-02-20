@@ -69,6 +69,9 @@ class KeyState(object):
         super().__init__()
         
         self.identifier = identifier
+    
+    def __repr__(self):
+        return "{}{{{}}}".format(type(self).__name__, repr(self.__dict__))
 
 
 class DropState(object):
@@ -80,7 +83,10 @@ class DropState(object):
         self.data = data
         self.target = 0
 
+    def __repr__(self):
+        return "{}{{{}}}".format(type(self).__name__, repr(self.__dict__))
 
+        
 class TouchState(object):
     def __init__(self, position, identifier=-1):
         super().__init__()
@@ -88,6 +94,9 @@ class TouchState(object):
         self.identifier = identifier
         self.position = position
         self.target = 0
+    
+    def __repr__(self):
+        return "{}{{{}}}".format(type(self).__name__, repr(self.__dict__))
 
 
 class Input(object):

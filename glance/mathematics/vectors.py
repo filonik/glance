@@ -86,19 +86,36 @@ def unit(i, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
     return result
 
 
-def units(indices, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
-    return np.array([unit(i, n=n, dtype=dtype) for i in indices], dtype=dtype).reshape(-1, n)
-
-
 def dot(*args):
     return utilities.foldl(np.dot, args)
 
 
-def inverse(m):
+def normalized(v):
+    try:
+        return v * (1.0/np.linalg.norm(v))
+    except np.linalg.LinAlgError:
+        return np.zeros_like(v)
+
+normalize = normalized
+
+
+def inversed(m):
     try:
         return np.linalg.inv(m)
     except np.linalg.LinAlgError:
         return np.zeros_like(m)
+
+inverse = inversed
+
+
+def units(k, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+    indices = range(k) if isinstance(k, int) else k
+    return np.array([unit(i, n=n, dtype=dtype) for i in indices], dtype=dtype).reshape(-1, n)
+
+
+def diagonals(k, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+    from .geometries import cubes
+    return np.array([vector(normalized(d), n=n, dtype=dtype) for d in cubes.cube_diagonals(k)], dtype=dtype).reshape(-1, n)
 
 
 def chunk1d(shape):

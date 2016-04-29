@@ -1,6 +1,8 @@
+import itertools as it
+
 import numpy as np
 
-from . import defaults, transforms, vectors
+from .. import defaults, transforms, vectors
 
 
 def center(x, n):
@@ -37,43 +39,10 @@ def parallel_axes(direction=None, k=0, n=defaults.DEFAULT_N, m=defaults.DEFAULT_
         yield parallel_axis(i, 1, direction*center(i, n), n=n, m=m, dtype=dtype)
 
 
-def spherical1(alphas, dtype=defaults.DEFAULT_DTYPE):
-    s, c = np.sin(alphas), np.cos(alphas)
-    return np.array([
-        [+c[0], -s[0], 0],
-        [+s[0], +c[0], 0],
-        [0, 0, 1],
-    ], dtype=dtype)
-
-
-def spherical2(alphas, dtype=defaults.DEFAULT_DTYPE):
-    s, c = np.sin(alphas), np.cos(alphas)
-    return np.array([
-        [+c[0], -s[0]*s[1], -s[0]*c[1], 0],
-        [0, +c[1], -s[1], 0],
-        [+s[0], +s[1]*c[0], +c[0]*c[1], 0],
-        [0, 0, 0, 1],
-    ], dtype=dtype)
-
-
-def spherical3(alphas, dtype=defaults.DEFAULT_DTYPE):
-    s, c = np.sin(alphas), np.cos(alphas)
-    return np.array([
-        [+c[0], -s[0]*s[1], -s[0]*s[2]*c[1], -s[0]*c[1]*c[2], 0],
-        [0, +c[1], -s[1]*s[2], -s[1]*c[2], 0],
-        [0, 0, +c[2], -s[2], 0],
-        [+s[0], +s[1]*c[0], +s[2]*c[0]*c[1], +c[0]*c[1]*c[2], 0],
-        [0, 0, 0, 0, 1],
-    ], dtype=dtype)
-
-
-def spherical4(alphas, dtype=defaults.DEFAULT_DTYPE):
-    s, c = np.sin(alphas), np.cos(alphas)
-    return np.array([
-        [+c[0], -s[0]*s[1], -s[0]*s[2]*c[1], -s[0]*s[3]*c[1]*c[2], -s[0]*c[1]*c[2]*c[3], 0],
-        [0, +c[1], -s[1]*s[2], -s[1]*s[3]*c[2], -s[1]*c[2]*c[3], 0],
-        [0, 0, +c[2], -s[2]*s[3], -s[2]*c[3], 0],
-        [0, 0, 0, +c[3], -s[3], 0],
-        [+s[0], +s[1]*c[0], +s[2]*c[0]*c[1], +s[3]*c[0]*c[1]*c[2], +c[0]*c[1]*c[2]*c[3], 0],
-        [0, 0, 0, 0, 0, 1],
-    ], dtype=dtype)
+def multiple_axes(direction=None, k=0, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+    direction = vectors.units([0,1], n=m, dtype=dtype) if direction is None else direction
+    result = transforms.scale(np.zeros(m-1, dtype=dtype), n=m, dtype=dtype)
+    for i, j in it.combinations(range(n), 2):
+        result[:2] = vectors.units([i,j], n=m, dtype=dtype)
+        offset = vectors.vector([center(i, n-1), center(j, n+1)], n=2) * 1.2
+        yield vectors.dot(result.T, transforms.scale_translate(vectors.full(1/(n-1), n=m-1), vectors.dot(offset, direction)))

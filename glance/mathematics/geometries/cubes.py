@@ -140,6 +140,14 @@ def cube_faces(k, n):
         for face in _cube_faces(path, i):
             yield map(mathematics.decode_binary, face)
 
+
+def cube_diagonals(n):
+    lower, upper = 0, cube_vertex_count(n) - 1
+    for i in range(cube_vertex_count(n-1)):
+        p0 = cube_vertex(lower + i, n)
+        p1 = cube_vertex(upper - i, n)
+        yield p1 - p0
+        
 '''
 def simplex_indices(k, n, dtype=np.uint32):
     from . import simplices

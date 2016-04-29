@@ -86,68 +86,38 @@ def general_perspective_inverted(fov, near, far, n=defaults.DEFAULT_N, m=default
     return result
 
 
-def diagonal(dst, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=np.float32):
+def diagonal(k, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+    result = np.zeros((m, m), dtype=dtype)
+    result[m-1, m-1] = 1
+    
+    ds = np.concatenate([vectors.units(k), vectors.diagonals(k)], axis=0)
+    o = min(len(ds), m-1)
+    result[:o] = ds[:o]
+    
+    return result
+
+'''
+def diagonal(dst, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
     result = transforms.scale(vectors.vector(np.ones(dst, dtype=dtype), n=m-1, dtype=dtype))
 
     if dst == 2:
         d = np.ones(dst, dtype=dtype)
         d = d/np.linalg.norm(d)
-        diagonals = np.asarray([np.dot(d, transforms.rotate(0, 1, a*np.pi/2, n=dst, dtype=dtype)) for a in range(2)])
+        diagonals = np.asarray([np.dot(d, transforms.rotate_axes(0, 1, a*np.pi/2, n=dst, dtype=dtype)) for a in range(2)])
         k = max(0, min(2, n-dst))
         result[dst:dst+k, :dst] = diagonals[:k]
     elif dst == 3:
         d = np.ones(dst, dtype=dtype)
         d = d/np.linalg.norm(d)
-        diagonals = np.asarray([np.dot(d, transforms.rotate(0, 1, a*np.pi/2, n=dst, dtype=dtype)) for a in range(4)])
+        diagonals = np.asarray([np.dot(d, transforms.rotate_axes(0, 1, a*np.pi/2, n=dst, dtype=dtype)) for a in range(4)])
         k = max(0, min(4, n-dst))
         result[dst:dst+k, :dst] = diagonals[:k]
     elif dst == 4:
         d = np.ones(dst, dtype=dtype)
         d = d/np.linalg.norm(d)
-        diagonals = np.asarray([np.dot(d, transforms.rotate(0, 1, a*np.pi/2, n=dst, dtype=dtype)) for a in range(8)])
+        diagonals = np.asarray([np.dot(d, transforms.rotate_axes(0, 1, a*np.pi/2, n=dst, dtype=dtype)) for a in range(8)])
         k = max(0, min(8, n-dst))
         result[dst:dst+k, :dst] = diagonals[:k]
-
+    
     return result
-
-'''
-def shear_diagonal(src, dst, n=DEFAULT_N, dtype=np.float32):
-    projection = transforms.identity(n, dtype=dtype)
-    if dst==2:
-        d = np.ones(dst, dtype=dtype)
-        d = d/np.linalg.norm(d)
-        diagonals = np.asarray([dot(d, transforms.rotate2_xy(a*np.pi/2, n=dst)) for a in range(2)])
-        k = max(0, min(2, src-dst))
-        projection[dst:dst+k,:dst] = diagonals[:k]
-    elif dst==3:
-        d = np.ones(dst, dtype=dtype)
-        d = d/np.linalg.norm(d)
-        diagonals = np.asarray([dot(d, transforms.rotate3_xy(a*np.pi/2, n=dst)) for a in range(4)])
-        k = max(0, min(4, src-dst))
-        projection[dst:dst+k,:dst] = diagonals[:k]
-    elif dst==4:
-        d = np.ones(dst, dtype=dtype)
-        d = d/np.linalg.norm(d)
-        diagonals = np.asarray([dot(d, transforms.rotate4_xy(a*np.pi/2, n=dst)) for a in range(8)])
-        k = max(0, min(8, src-dst))
-        projection[dst:dst+k,:dst] = diagonals[:k]
-
-    return projection[:n,:dst]
-'''
-'''
-def shear(m, n=DEFAULT_N, dtype=np.float32):
-    if n==2:
-        i = transforms.identity(n, dtype=dtype)
-        r = dot(transforms.rotate2_xy(np.pi/4, n=n))
-        projection = np.r_[tuple([i, r])]
-    elif n==3:
-        i = transforms.identity(n, dtype=dtype)
-        r = dot(transforms.rotate3_xy(np.pi/4, n=n), transforms.rotate3_yz(np.pi/4, n=n))
-        projection = np.r_[tuple([i, r])]
-    elif n==4:
-        i = transforms.identity(n, dtype=dtype)
-        r = dot(transforms.rotate4_xy(np.pi/4, n=n), transforms.rotate4_yz(np.pi/4, n=n), transforms.rotate4_zw(np.pi/4, n=n))
-        projection = np.r_[tuple([i, r])]
-
-    return projection[:m]
 '''

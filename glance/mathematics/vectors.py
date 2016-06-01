@@ -1,3 +1,6 @@
+import functools as ft
+import itertools as it
+
 import numpy as np
 
 from encore import utilities
@@ -20,14 +23,14 @@ def ones(*args, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
     return full(1.0, *args, n=n, dtype=dtype)
 
 
-def vector(value, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
-    return zeros(*value, n=n, dtype=dtype)
-
-
 def homogeneous(value, w, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
-    result = vector(value, n=n, dtype=dtype)
+    result = zeros(*value, n=n, dtype=dtype)
     result[n-1] = w
     return result
+
+
+def vector(value, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+    return homogeneous(value, 0.0, n=n, dtype=dtype)
 
 
 def point(value, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
@@ -38,6 +41,15 @@ def factory(n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
     def _factory(*args):
         return zeros(*args, n=n, dtype=dtype)
     return _factory
+
+
+def clamp(value, lower, upper):
+    return np.minimum(np.maximum(value, lower), upper)
+
+
+def clamp_range(values, bounds):
+    lower, upper = bounds
+    return (clamp(values[0], lower, upper), clamp(values[1], lower, upper))
 
 
 def interpolate_linear(a, b):
@@ -96,21 +108,23 @@ def normalized(v):
     except np.linalg.LinAlgError:
         return np.zeros_like(v)
 
+
 normalize = normalized
-
-
-def inversed(m):
-    try:
-        return np.linalg.inv(m)
-    except np.linalg.LinAlgError:
-        return np.zeros_like(m)
-
-inverse = inversed
 
 
 def units(k, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
     indices = range(k) if isinstance(k, int) else k
-    return np.array([unit(i, n=n, dtype=dtype) for i in indices], dtype=dtype).reshape(-1, n)
+    return np.array([unit(i, n=n, dtype=dtype) for i in indices], dtype=dtype)
+
+
+def combinations(k, n=defaults.DEFAULT_M):
+    return it.combinations(range(n), k)
+
+
+def unit_indices(k, n=defaults.DEFAULT_M):
+    source = set(range(n))
+    for index in combinations(k, n=n):
+        yield index, source - set(index)
 
 
 def diagonals(k, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):

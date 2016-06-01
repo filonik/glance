@@ -116,9 +116,19 @@ class Input(object):
         super().__init__()
         
         self._keys = {}
-        self._drops = []
         self._touches = {}
         
+        self._drops = []
+    
+    def has_keys(self):
+        return len(self._keys)
+    
+    def has_touches(self):
+        return len(self._touches)
+    
+    def has_drops(self):
+        return len(self._drops)
+    
     def drop(self, value):
         self._drops.append(value)
     

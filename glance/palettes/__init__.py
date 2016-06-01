@@ -89,6 +89,7 @@ def _try_import_shape_palettes(name, path):
 
 
 _try_import_color_palettes("brewer", "brewer.json",)
+_try_import_color_palettes("various", "various.json",)
 _try_import_shape_palettes("geometric", "geometric.json")
 _try_import_shape_palettes("symbolic", "symbolic.json")
 

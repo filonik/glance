@@ -26,6 +26,20 @@ DEFAULT_TEXTURE_EMPTY = textures.Texture.from_data(target=GL.GL_TEXTURE_2D, size
 DEFAULT_TEXTURE_BLACK = textures.Texture.from_data(target=GL.GL_TEXTURE_2D, size=(1, 1), image=np.array([[(0, 0, 0, 255)]], dtype=np.uint8), format=GL.GL_RGBA)
 DEFAULT_TEXTURE_WHITE = textures.Texture.from_data(target=GL.GL_TEXTURE_2D, size=(1, 1), image=np.array([[(255, 255, 255, 255)]], dtype=np.uint8), format=GL.GL_RGBA)
 
+DEFAULT_SIMPLEX_PRIMITIVES = {0: GL.GL_POINTS, 1:GL.GL_LINES, 2: GL.GL_TRIANGLES}
+
+DEFAULT_PROGRAM_DEFINES = mappings.DefineMap({
+    "GLANCE_MATERIAL_COLOR_AMBIENT": 1,
+    "GLANCE_MATERIAL_COLOR_DIFFUSE": 1,
+    "GLANCE_MATERIAL_COUNT": 2,
+    "GLANCE_MATERIAL_SIDES": 1,
+    "GLANCE_TESS_LEVEL_INNER": DEFAULT_TESS_LEVEL_INNER,
+    "GLANCE_TESS_LEVEL_OUTER": DEFAULT_TESS_LEVEL_OUTER,
+    "GLANCE_VERTEX_FORMAT": vertices.DEFAULT_FORMAT,
+    "GLANCE_VERTEX_ND_FORMAT": vertices.DEFAULT_FORMAT,
+    "M_N": mathematics.defaults.DEFAULT_N,
+})
+
 DEFAULT_BACKGROUND_PROGRAMS = {
     GL.GL_TEXTURE_CUBE_MAP: shaders.Program.from_files(["noop.vs", "background.gs", "background.fs"], defines={"GLANCE_BACKGROUND_CUBE": 1}),
     GL.GL_TEXTURE_2D: shaders.Program.from_files(["noop.vs", "background.gs", "background.fs"], defines={"GLANCE_BACKGROUND_CUBE": 0}),

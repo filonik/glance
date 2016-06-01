@@ -10,6 +10,36 @@ def rotate1d(v, dtype=defaults.DEFAULT_DTYPE):
         [1],
     ], dtype=dtype)
 
+'''
+def rotate2d(v, dtype=defaults.DEFAULT_DTYPE):
+    s = np.sin(v)
+    c = np.cos(v)
+    return np.array([
+        [+c[1], +s[1]],
+        [-s[1], +c[1]]
+    ], dtype=dtype)
+
+
+def rotate3d(v, dtype=defaults.DEFAULT_DTYPE):
+    s = np.sin(v)
+    c = np.cos(v)
+    return np.array([
+        [+c[1]*c[2], +s[1]*c[2], +s[2]],
+        [-s[1],      +c[1],       0],
+        [-s[2]*c[1], -s[1]*s[2], +c[2]]
+    ], dtype=dtype)
+
+
+def rotate4d(v, dtype=defaults.DEFAULT_DTYPE):
+    s = np.sin(v)
+    c = np.cos(v)
+    return np.array([
+        [+c[1]*c[2]*c[3], +s[1]*c[2]*c[3], +s[2]*c[3], +s[3]],
+        [-s[1],           +c[1],            0,          0],
+        [-c[1]*s[2],      -s[1]*s[2],      +c[2],       0],
+        [-c[1]*c[2]*s[3], -s[1]*c[2]*s[3], -s[2]*s[3], +c[3]]
+    ], dtype=dtype)
+'''
 
 def rotate2d(v, dtype=defaults.DEFAULT_DTYPE):
     s = np.sin(v)

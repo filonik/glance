@@ -8,7 +8,7 @@ from glue.gl import GL
 
 from encore import decorators
 
-from ..mathematics import vectors
+from ..mathematics import transforms, vectors
 
 from . import resources, shaders
 
@@ -118,8 +118,8 @@ class Renderer(object):
         self.uniforms['view_projection'] = view_projection
         self.uniforms['projection'] = projection
 
-        self.uniforms['inverse_model'] = vectors.inverse(model)
-        self.uniforms['inverse_view'] = vectors.inverse(view)
+        self.uniforms['inverse_model'] = transforms.inversed(model)
+        self.uniforms['inverse_view'] = transforms.inversed(view)
         
         #print(self.uniforms['inverse_view'])
         
@@ -127,42 +127,59 @@ class Renderer(object):
         #self.uniforms['dual_model_view'] = normalized_basis(transpose_inverse(model_view[:3,:3]))
     
     def set_model_nd(self, model_nd):
-        model_nd_chunked = vectors.default_chunk2d(model_nd)
-        self.set_uniform_array_2d("model_nd", model_nd_chunked)
+        if self.uniforms["model_nd[0][0]"] != -1:
+            model_nd_chunked = vectors.default_chunk2d(model_nd)
+            self.set_uniform_array_2d("model_nd", model_nd_chunked)
         
-        inverse_model_nd = vectors.inverse(model_nd)
-        inverse_model_nd_chunked = vectors.default_chunk2d(inverse_model_nd)
-        self.set_uniform_array_2d("inverse_model_nd", inverse_model_nd_chunked)
+        if self.uniforms["inverse_model_nd[0][0]"] != -1:
+            inverse_model_nd = transforms.inversed(model_nd)
+            inverse_model_nd_chunked = vectors.default_chunk2d(inverse_model_nd)
+            self.set_uniform_array_2d("inverse_model_nd", inverse_model_nd_chunked)
+        
+        if self.uniforms["dual_model_nd[0][0]"] != -1:
+            dual_model_nd = transforms.dualized(model_nd)
+            dual_model_nd_chunked = vectors.default_chunk2d(dual_model_nd)
+            self.set_uniform_array_2d("dual_model_nd", dual_model_nd_chunked)
     
-        #dual_model_nd = np.transpose(unit_row(inverse_model_nd, len(inverse_model_nd)-1))
-        #dual_model_nd_chunked = vectors.default_chunk2d(dual_model_nd)
-
     def set_view_nd(self, view_nd):
-        view_nd_chunked = vectors.default_chunk2d(view_nd)
-        self.set_uniform_array_2d("view_nd", view_nd_chunked)
+        if self.uniforms["view_nd[0][0]"] != -1:
+            view_nd_chunked = vectors.default_chunk2d(view_nd)
+            self.set_uniform_array_2d("view_nd", view_nd_chunked)
         
-        inverse_view_nd = vectors.inverse(view_nd)
-        inverse_view_nd_chunked = vectors.default_chunk2d(inverse_view_nd)
-        self.set_uniform_array_2d("inverse_view_nd", inverse_view_nd_chunked)
-        
-        #dual_view_nd = np.transpose(unit_row(inverse_view_nd, len(inverse_view_nd)-1))
-        #dual_view_nd_chunked = vectors.default_chunk2d(dual_view_nd)
+        if self.uniforms["inverse_view_nd[0][0]"] != -1:
+            inverse_view_nd = transforms.inversed(view_nd)
+            inverse_view_nd_chunked = vectors.default_chunk2d(inverse_view_nd)
+            self.set_uniform_array_2d("inverse_view_nd", inverse_view_nd_chunked)
+    
+        if self.uniforms["dual_view_nd[0][0]"] != -1:
+            dual_view_nd = transforms.dualized(view_nd)
+            dual_view_nd_chunked = vectors.default_chunk2d(dual_view_nd)
+            self.set_uniform_array_2d("dual_view_nd", dual_view_nd_chunked)
     
     def set_projection_nd(self, projection_nd):
-        projection_nd_chunked = vectors.default_chunk2d(projection_nd)
-        self.set_uniform_array_2d("projection_nd", projection_nd_chunked)
+        if self.uniforms["projection_nd[0][0]"] != -1:
+            projection_nd_chunked = vectors.default_chunk2d(projection_nd)
+            self.set_uniform_array_2d("projection_nd", projection_nd_chunked)
         
     def set_model_view_nd(self, model_nd, view_nd):
         self.set_model_nd(model_nd)
         self.set_view_nd(view_nd)
         
         model_view_nd = np.dot(model_nd, view_nd)
-        model_view_nd_chunked = vectors.default_chunk2d(model_view_nd)
-        self.set_uniform_array_2d("model_view_nd", model_view_nd_chunked)
         
-        inverse_model_view_nd = vectors.inverse(model_view_nd)
-        inverse_model_view_nd_chunked = vectors.default_chunk2d(inverse_model_view_nd)
-        self.set_uniform_array_2d("inverse_model_view_nd", inverse_model_view_nd_chunked)
+        if self.uniforms["model_view_nd[0][0]"] != -1:
+            model_view_nd_chunked = vectors.default_chunk2d(model_view_nd)
+            self.set_uniform_array_2d("model_view_nd", model_view_nd_chunked)
+        
+        if self.uniforms["inverse_model_view_nd[0][0]"] != -1:
+            inverse_model_view_nd = transforms.inversed(model_view_nd)
+            inverse_model_view_nd_chunked = vectors.default_chunk2d(inverse_model_view_nd)
+            self.set_uniform_array_2d("inverse_model_view_nd", inverse_model_view_nd_chunked)
+        
+        if self.uniforms["dual_model_view_nd[0][0]"] != -1:
+            dual_model_view_nd = transforms.dualized(model_view_nd)
+            dual_model_view_nd_chunked = vectors.default_chunk2d(dual_model_view_nd)
+            self.set_uniform_array_2d("dual_model_view_nd", dual_model_view_nd_chunked)
     
     def set_model_view_projection_nd(self, model_nd, view_nd, projection_nd):
         self.set_model_nd(model_nd)
@@ -170,16 +187,30 @@ class Renderer(object):
         self.set_projection_nd(projection_nd)
         
         model_view_nd = np.dot(model_nd, view_nd)
-        model_view_nd_chunked = vectors.default_chunk2d(model_view_nd)
-        self.set_uniform_array_2d("model_view_nd", model_view_nd_chunked)
-        
         model_view_projection_nd = np.dot(model_view_nd, projection_nd)
-        model_view_projection_nd_chunked = vectors.default_chunk2d(model_view_projection_nd)
-        self.set_uniform_array_2d("model_view_projection_nd", model_view_projection_nd_chunked)
-        
         view_projection_nd = np.dot(view_nd, projection_nd)
-        view_projection_nd_chunked = vectors.default_chunk2d(view_projection_nd)
-        self.set_uniform_array_2d("view_projection_nd", view_projection_nd_chunked)
+        
+        if self.uniforms["model_view_nd[0][0]"] != -1:
+            model_view_nd_chunked = vectors.default_chunk2d(model_view_nd)
+            self.set_uniform_array_2d("model_view_nd", model_view_nd_chunked)
+        
+        if self.uniforms["model_view_projection_nd[0][0]"] != -1:
+            model_view_projection_nd_chunked = vectors.default_chunk2d(model_view_projection_nd)
+            self.set_uniform_array_2d("model_view_projection_nd", model_view_projection_nd_chunked)
+        
+        if self.uniforms["view_projection_nd[0][0]"] != -1:
+            view_projection_nd_chunked = vectors.default_chunk2d(view_projection_nd)
+            self.set_uniform_array_2d("view_projection_nd", view_projection_nd_chunked)
+        
+        if self.uniforms["inverse_model_view_nd[0][0]"] != -1:
+            inverse_model_view_nd = transforms.inversed(model_view_nd)
+            inverse_model_view_nd_chunked = vectors.default_chunk2d(inverse_model_view_nd)
+            self.set_uniform_array_2d("inverse_model_view_nd", inverse_model_view_nd_chunked)
+        
+        if self.uniforms["dual_model_view_nd[0][0]"] != -1:
+            dual_model_view_nd = transforms.dualized(model_view_nd)
+            dual_model_view_nd_chunked = vectors.default_chunk2d(dual_model_view_nd)
+            self.set_uniform_array_2d("dual_model_view_nd", dual_model_view_nd_chunked)
     
     def activate(self, resource):
         if isinstance(resource, shaders.Program):
@@ -201,3 +232,15 @@ class Renderer(object):
 
         for arg in reversed(args):
             self.deactivate(arg)
+    
+    def save_screenshot(self, path, *args, **kwargs):
+        import PIL.Image
+
+        w, h = self.window.size
+    
+        GL.glReadBuffer(GL.GL_FRONT)
+        data = GL.glReadPixels(0, 0, w, h, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
+    
+        image = PIL.Image.frombytes(mode="RGBA", size=(w, h), data=data)     
+        image = image.transpose(PIL.Image.FLIP_TOP_BOTTOM)
+        image.save(path, 'PNG')

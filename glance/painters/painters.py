@@ -44,6 +44,11 @@ class ImageCache(object):
 DefaultImageCache = ImageCache()
 
 
+class Alignment(enum.IntEnum):
+    Left = 0
+    Right = 1
+    Center = 2
+
 class Weight(enum.IntEnum):
     Normal = cairo.FONT_WEIGHT_NORMAL
     Bold = cairo.FONT_WEIGHT_BOLD
@@ -169,6 +174,7 @@ def text(content, **kwargs):
         Weight.Normal: cairo.FONT_WEIGHT_NORMAL,
         Weight.Bold: cairo.FONT_WEIGHT_BOLD,
     }[font_weight]
+    align = kwargs.get('align', Alignment.Center)
     
     def paint(cr, size):
         aspect = size/np.min(size)
@@ -180,8 +186,13 @@ def text(content, **kwargs):
 
         #cr.rectangle(-1.0, -1.0, 2.0, 2.0)
         #cr.rectangle(-width/2.0, -height/2.0, width, height)
-        cr.move_to(-x_bearing - width/2.0, -y_bearing - height/2.0)
-
+        if align == Alignment.Center:
+            cr.move_to(-x_bearing - width/2.0, -y_bearing - height/2.0)
+        elif align == Alignment.Left:
+            cr.move_to(-x_bearing, -y_bearing - height/2.0)
+        elif align == Alignment.Right:
+            cr.move_to(-x_bearing - width, -y_bearing - height/2.0)
+        
         cr.text_path(content)
     return _normal_path(paint, **kwargs)
 

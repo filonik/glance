@@ -13,68 +13,75 @@ class Component(enum.IntEnum):
     Orientate = (1 << 3)
 
 
-def spherical(rotation, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
-    result = transforms.identity(n=m, dtype=dtype)
-    if n==2:
-        result[:3,:3] = coordinates.spherical1(rotation, dtype=dtype)
-    elif n==3:
-        result[:4,:4] = coordinates.spherical2(rotation, dtype=dtype)
-    elif n==4:
-        result[:5,:5] = coordinates.spherical3(rotation, dtype=dtype)
-    elif n==5:
-        result[:6,:6] = coordinates.spherical4(rotation, dtype=dtype)
-    return result
-
-
 class Transform(object):
     @property
     def translation(self):
-        return self._translation
+        return self._translation1
         
     @translation.setter
     def translation(self, value):
-        n = min(len(self._translation), len(value))
-        self._translation[:n] = value[:n]
+        n = min(len(self._translation1), len(value))
+        self._translation0, self._translation1 = np.copy(self._translation1), value[:n]
     
     @property
     def rotation(self):
-        return self._rotation
+        return self._rotation1
         
     @rotation.setter
     def rotation(self, value):
-        n = min(len(self._rotation), len(value))
-        self._rotation[:n] = value[:n]
+        n = min(len(self._rotation1), len(value))
+        self._rotation0, self._rotation1[:n] = np.copy(self._rotation1), value[:n]
     
     @property
     def scaling(self):
-        return self._scaling
-        
+        return self._scaling1
+    
     @scaling.setter
     def scaling(self, value):
-        n = min(len(self._scaling), len(value))
-        self._scaling[:n] = value[:n]
+        n = min(len(self._scaling1), len(value))
+        self._scaling0, self._scaling1[:n] = np.copy(self._scaling1), value[:n]
     
     def __init__(self, translation=vectors.zeros(n=0), rotation=vectors.zeros(n=0), scaling=vectors.ones(n=0), reversed=False, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
         super().__init__()
         
+        self._translation0 = vectors.zeros(*translation, n=n, dtype=dtype)
+        self._translation1 = vectors.zeros(*translation, n=n, dtype=dtype)
+        self._rotation0 = vectors.zeros(*rotation, n=n, dtype=dtype)
+        self._rotation1 = vectors.zeros(*rotation, n=n, dtype=dtype)
+        self._scaling0 = vectors.ones(*scaling, n=n, dtype=dtype)
+        self._scaling1 = vectors.ones(*scaling, n=n, dtype=dtype)
+        
+        self._delta_translation = vectors.zeros(n=n, dtype=dtype)
+        self._delta_rotation = vectors.zeros(n=n, dtype=dtype)
+        self._delta_scaling = vectors.ones(n=n, dtype=dtype)
+        
         self._reversed = reversed
-        
-        self._translation = vectors.zeros(*translation, n=m-1, dtype=dtype)
-        self._rotation = vectors.zeros(*rotation, n=m-1, dtype=dtype)
-        self._scaling = vectors.ones(*scaling, n=m-1, dtype=dtype)
-        
-        self._delta_translation = vectors.zeros(n=m-1, dtype=dtype)
-        self._delta_rotation = vectors.zeros(n=m-1, dtype=dtype)
-        self._delta_scaling = vectors.ones(n=m-1, dtype=dtype)
+    
+    def reset(self):
+        self._translation0 = np.zeros_like(self._translation0)
+        self._translation1 = np.zeros_like(self._translation1)
+        self._rotation0 = np.zeros_like(self._rotation0)
+        self._rotation1 = np.zeros_like(self._rotation1)
+        self._scaling0 = np.ones_like(self._scaling0)
+        self._scaling1 = np.ones_like(self._scaling1)
+    
+    def translation_at(self, alpha):
+        return vectors.interpolate_linear(self._translation0, self._translation1)(alpha)
+    
+    def rotation_at(self, alpha):
+        return vectors.interpolate_linear(self._rotation0, self._rotation1)(alpha)
+    
+    def scaling_at(self, alpha):
+        return vectors.interpolate_linear(self._scaling0, self._scaling1)(alpha)
     
     def translate(self, value):
-        self._translation += value
+        self._translation1 += value
 
     def rotate(self, value):
-        self._rotation += value
+        self._rotation1 += value
 
     def scale(self, value):
-        self._scaling *= value
+        self._scaling1 *= value
     
     def update(self, delta):
         self.translate(self._delta_translation * delta)
@@ -82,17 +89,26 @@ class Transform(object):
         #self.scale(self._delta_scaling ** delta)
     
     def to_matrix(self, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
-        scale = transforms.scale(self._scaling, n=m, dtype=dtype)
-        rotate = spherical(self._rotation, n=n, m=m, dtype=dtype)
-        translate = transforms.translate(self._translation, n=m, dtype=dtype)
-        
-        #np.dot(rotation, transforms.translate_scale(self._translation, self._scaling, n=m, dtype=dtype))
-        #np.dot(rotation, transforms.scale_translate(self._scaling, self._translation, n=m, dtype=dtype))
+        scale = transforms.scale(self.scaling, n=m, dtype=dtype)
+        rotate = transforms.rotate(self.rotation, n=n, m=m, dtype=dtype)
+        rotate = transforms.inversed(rotate)
+        translate = transforms.translate(self.translation, n=m, dtype=dtype)
         
         if self._reversed:
             return vectors.dot(translate, rotate, scale) #TRS - Order
         else:
             return vectors.dot(scale, rotate, translate) #SRT - Order
-
+    
+    def to_matrix_at(self, alpha, n=defaults.DEFAULT_N, m=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+        scale = transforms.scale(self.scaling_at(alpha), n=m, dtype=dtype)
+        rotate = transforms.rotate(self.rotation_at(alpha), n=n, m=m, dtype=dtype)
+        rotate = transforms.inversed(rotate)
+        translate = transforms.translate(self.translation_at(alpha), n=m, dtype=dtype)
+        
+        if self._reversed:
+            return vectors.dot(translate, rotate, scale) #TRS - Order
+        else:
+            return vectors.dot(scale, rotate, translate) #SRT - Order
+    
     def __str__(self):
         return str(self.to_matrix())

@@ -10,11 +10,11 @@ class Status(enum.IntEnum):
 
 
 class Resource(object):
-    def __init__(self):
+    def __init__(self, value=None):
         super(Resource, self).__init__()
 
         self._status = Status.CreateRequested
-        self._value = None
+        self._value = value
 
     def request_create(self): self._status = min(self._status, Status.CreateRequested)
 
@@ -31,7 +31,7 @@ class Resource(object):
 
     def update(self, *args, **kwargs):
         return Status.Ready if self._value else Status.Error
-
+    
     def prepare(self, *args, **kwargs):
         if self._status is Status.Ready:
             return True
@@ -44,6 +44,9 @@ class Resource(object):
             self._status = self.update(*args, **kwargs)
 
         return self._status is Status.Ready
+    
+    def __str__(self):
+        return "{}{{{}}}".format(type(self).__name__, self._value)
 
 
 class Observable(object):

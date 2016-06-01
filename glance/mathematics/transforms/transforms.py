@@ -36,6 +36,22 @@ def col(i, v, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
     return result
 
 
+def rows(vs, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+    result = np.zeros((n, n), dtype=dtype)
+    for i, v in enumerate(vs):
+        result[i,:len(v)] = v
+    result[-1,-1] = 1.0
+    return result
+
+
+def cols(vs, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
+    result = np.zeros((n, n), dtype=dtype)
+    for i, v in enumerate(vs):
+        result[:len(v),i] = v
+    result[-1,-1] = 1.0
+    return result
+
+
 def translate(v, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
     result = identity(n, dtype=dtype)
     for i in range(min(n, len(v))):
@@ -91,3 +107,33 @@ def scale_translate(v, w, n=defaults.DEFAULT_M, dtype=defaults.DEFAULT_DTYPE):
     for i in range(min(n, len(w))):
         result[-1, i] = w[i]
     return result
+
+    
+def normalized(m):
+    try:
+        return m * ((1.0/np.linalg.norm(m, axis=1)[:,np.newaxis]))
+    except np.linalg.LinAlgError:
+        return np.zeros_like(m)
+
+
+def transposed(m):
+    return np.transpose(m)
+
+
+def inversed(m):
+    try:
+        return np.linalg.inv(m)
+    except np.linalg.LinAlgError:
+        return np.zeros_like(m)
+
+
+def dualized(m):
+    result = np.zeros_like(m)
+    result[:-1,:-1] = normalized(transposed(inversed(m[:-1,:-1])))
+    result[-1,-1] = 1.0
+    return result
+
+
+normalize = normalized
+transpose = transposed
+inverse = inversed

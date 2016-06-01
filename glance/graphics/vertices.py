@@ -61,6 +61,9 @@ class ComponentType(object):
         self._factory = factory
         self._m = m
     
+    def __call__(self, value):
+        return self._chunk(self._pad(value))
+    
     def shape(self, m=defaults.DEFAULT_M):
         # The instance 'm' takes priority!
         m = m if self._m is None else self._m
@@ -123,15 +126,23 @@ class Component(enum.IntEnum):
     Color1 = (1 << 6)
     Size = (1 << 7)
     Offset = (1 << 8)
-    Transform = (1 << 9)
-    Identifier = (1 << 10)
-    InstancePosition = (1 << 11)
-    InstanceTexCoord = (1 << 12)
+    Rotation = (1 << 9)
+    Transform = (1 << 10)
+    Identifier = (1 << 11)
+    InstancePosition = (1 << 12)
+    InstanceTexCoord = (1 << 13)
+    
+    @property
+    def type(self):
+        return COMPONENT_TO_COMPONENT_TYPE.get(self)
+
 
 FORMAT_PLAIN = Component.Position | Component.TexCoord0 | Component.TexCoord1 | Component.Color0 | Component.Color1
 FORMAT_SIZE = FORMAT_PLAIN | Component.Size
 FORMAT_OFFSET = FORMAT_PLAIN | Component.Offset
-FORMAT_SIZE_OFFSET = FORMAT_PLAIN | Component.Size | Component.Offset
+FORMAT_ROTATION = FORMAT_PLAIN | Component.Rotation
+FORMAT_SIZE_OFFSET = FORMAT_SIZE | Component.Offset
+FORMAT_SIZE_OFFSET_ROTATION = FORMAT_SIZE_OFFSET | Component.Rotation
 FORMAT_TRANSFORM = FORMAT_PLAIN | Component.Transform
 FORMAT_INSTANCE = Component.InstancePosition | Component.InstanceTexCoord
 
@@ -148,6 +159,7 @@ COMPONENT_TO_COMPONENT_TYPE = {
     Component.Color1: ComponentType('color1', 1, np.float32, utilities.identity, utilities.identity, one_generator, m=4),
     Component.Size: ComponentType('size', 1, defaults.DEFAULT_DTYPE, vectors.default_chunk1d, utilities.identity, zero_generator),
     Component.Offset: ComponentType('offset', 1, defaults.DEFAULT_DTYPE, vectors.default_chunk1d, utilities.identity, zero_generator),
+    Component.Rotation: ComponentType('rotation', 1, defaults.DEFAULT_DTYPE, vectors.default_chunk1d, utilities.identity, zero_generator),
     Component.Transform: ComponentType('transform', 2, defaults.DEFAULT_DTYPE, vectors.default_chunk2d, utilities.identity, identity_generator),
     Component.Identifier: ComponentType('identifier', 0, np.uint32, utilities.identity, zero_pad(m=4, dtype=np.uint32), identifier_generator),
     Component.InstancePosition: ComponentType('instance_position', 1, defaults.DEFAULT_DTYPE, vectors.default_chunk1d, utilities.identity, zero_generator),

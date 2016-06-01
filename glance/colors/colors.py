@@ -1,6 +1,6 @@
 import numpy as np
 
-from encore import decorators, iterables, objects
+from encore import decorators, generators, iterables, objects
 
 from . import colorconversions
 
@@ -88,3 +88,7 @@ class Color(np.ndarray):
         
     def darken(self, factor):
         return self.lighten(-factor)
+
+
+def ordinals(repeat=1):
+    return iterables.repeated((Color.from_ordinal(i) for i in generators.autoincrement()), repeat)
